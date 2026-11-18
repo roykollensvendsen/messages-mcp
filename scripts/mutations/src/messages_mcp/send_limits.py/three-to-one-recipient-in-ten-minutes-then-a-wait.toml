@@ -1,0 +1,5 @@
+[[rule]]
+name = "three to one recipient in ten minutes then a wait"
+file = "src/messages_mcp/send_limits.py"
+find = 'if len\(within\) >= most:'
+replace = '            if False:'

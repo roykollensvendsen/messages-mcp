@@ -139,6 +139,8 @@ MAY_SLEEP = {
     # matrix-door's watch waits a minute between asking whether Funnel or serve opened a way
     # round it. It runs beside a door that is already listening, never before it.
     ("door.py", "_watch"),
+    # The outbox's undo hold waits the delay after the owner says "send", never during a start.
+    ("outbox.py", "__init__"),
 }
 
 

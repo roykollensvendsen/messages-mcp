@@ -1,0 +1,5 @@
+[[rule]]
+name = "a draft is confirmed once"
+file = "src/messages_mcp/outbox.py"
+find = 'self\._drafts\.take\(token\)'
+replace = '        pass'

@@ -1,0 +1,5 @@
+[[rule]]
+name = "a line holds no text and no room id"
+file = "src/messages_mcp/sent_log.py"
+find = '"room": hashlib\.sha256\(room\.encode\(\)\)\.hexdigest\(\)\[:16\],'
+replace = '            "room": room,'

@@ -1,0 +1,5 @@
+[[rule]]
+name = "a delay under the floor is refused at load"
+file = "src/messages_mcp/send_settings.py"
+find = 'if delay < FLOOR:'
+replace = '    if False:'

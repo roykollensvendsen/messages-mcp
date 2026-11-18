@@ -1,0 +1,5 @@
+[[rule]]
+name = "stop wins the race with exactly one outcome every time"
+file = "src/messages_mcp/outbox.py"
+find = 'if held\.state == "held":\s*$'
+replace = '            if True:'

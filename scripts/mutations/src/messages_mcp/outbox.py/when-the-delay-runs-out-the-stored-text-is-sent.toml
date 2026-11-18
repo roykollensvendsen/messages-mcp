@@ -1,0 +1,5 @@
+[[rule]]
+name = "when the delay runs out the stored text is sent"
+file = "src/messages_mcp/outbox.py"
+find = 'await self\._sender\.send\(held\.draft\.receiver, held\.draft\.room, held\.draft\.text\)'
+replace = '            await self._sender.send(held.draft.receiver, held.draft.room, "")'

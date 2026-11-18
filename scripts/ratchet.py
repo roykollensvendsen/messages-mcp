@@ -91,6 +91,11 @@ CORE = {
     "accounts",
     # What M8 adds: drafts in memory, and what a voice-written text may hold.
     "drafts",
+    # What M9 adds: the undo hold, its delay setting, the rate limits and the log of sends.
+    "outbox",
+    "send_settings",
+    "send_limits",
+    "sent_log",
 }
 TOP = {"server", "cli"}
 #: Which layers each layer may import from this package, and the outside packages it never may.

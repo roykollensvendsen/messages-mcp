@@ -63,3 +63,19 @@ class FakeInbox:
             msg = "the inbox did not answer"
             raise UnreachableError(msg)
         return list(self.chats_held)
+
+
+class FakeSender:
+    """A sender that only records what it was asked to send; nothing ever leaves the process."""
+
+    def __init__(self, *, fails: bool = False) -> None:
+        """Record sends, or fail every one when `fails`."""
+        self.sent: list[tuple[str, str, str]] = []
+        self.fails = fails
+
+    async def send(self, receiver: str, room: str, text: str) -> None:
+        """Record the send, or fail as a sender whose server is down."""
+        if self.fails:
+            msg = "the made-up sender did not answer"
+            raise UnreachableError(msg)
+        self.sent.append((receiver, room, text))
