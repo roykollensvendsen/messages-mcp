@@ -10,11 +10,11 @@ import ast
 import os
 import pathlib
 import shutil
-import subprocess
 import sys
 import tempfile
 
 import pytest
+from bounded import run_bounded
 
 ROOT = pathlib.Path(__file__).parent.parent
 FORGOTTEN = "a temporary file or folder made with no removal beside it"
@@ -181,7 +181,7 @@ def test_a_run_s_temporary_files_lie_under_its_own_folder(tmp_path):
     assert tmp_path.is_relative_to(root)
     assert "pytest-of-" not in str(tmp_path)
     assert pathlib.Path(tempfile.gettempdir()) == root
-    child = subprocess.run(
+    child = run_bounded(
         [sys.executable, "-c", "import tempfile; print(tempfile.gettempdir())"],
         capture_output=True,
         text=True,
@@ -217,7 +217,7 @@ def _project(tmp_path, test):
 
 def _run(project, base):
     env = {**os.environ, "TMPDIR": str(base)}
-    return subprocess.run(
+    return run_bounded(
         [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "--rootdir", str(project), "tests"],
         cwd=project,
         env=env,
