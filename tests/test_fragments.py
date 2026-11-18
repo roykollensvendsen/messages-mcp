@@ -87,9 +87,16 @@ def test_the_bridge_makes_no_encrypted_rooms():
     assert encryption["default"] is False
 
 
-def test_the_bridge_keeps_ephemeral_events_on_until_measured():
-    """What turning it off breaks is measured with a decoy account first (slice M12)."""
-    assert _bridge()["appservice"]["ephemeral_events"] is True
+def test_the_bridge_is_sent_no_receipts_typing_or_presence():
+    """Wall 1 (voice-architect, M12): with no encryption, ephemeral events carry only those."""
+    assert _bridge()["appservice"]["ephemeral_events"] is False
+
+
+def test_the_bridge_bot_is_the_one_the_plugin_trusts():
+    """The fragment names the bot, and the plugin trusts m.bridge state from that name only."""
+    from messages_mcp.matrix import BOT_USERNAME
+
+    assert _bridge()["appservice"]["bot"]["username"] == BOT_USERNAME
 
 
 def test_the_bridge_has_no_relay():

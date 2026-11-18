@@ -14,12 +14,14 @@ from aiohttp import web
 PLUGIN_TOKEN = "made-up-plugin-token"  # noqa: S105 - made up
 ELEMENT_TOKEN = "made-up-element-token"  # noqa: S105 - made up
 OWNER = "@owner:made-up-laptop.example.invalid"
+#: The bridge bot on the owner's server, as our fragment names it.
+BOT = "@facebookbot:made-up-laptop.example.invalid"
 PASSWORD = "made-up-password"  # noqa: S105 - made up
 #: A bound on each wait for the made-up server, so a test that would hang fails instead.
 WITHIN = 30
 
 
-def _event(kind, content, *, sender="@bridgebot:made-up", key=None, ts=0, event_id=None):  # noqa: PLR0913 - an event's own fields
+def _event(kind, content, *, sender=BOT, key=None, ts=0, event_id=None):  # noqa: PLR0913 - an event's own fields
     event = {"type": kind, "content": content, "sender": sender, "origin_server_ts": ts}
     if key is not None:
         event["state_key"] = key
@@ -33,16 +35,19 @@ def text(sender, body, ts, msgtype="m.text"):
     return {"sender": sender, "body": body, "ts": ts, "msgtype": msgtype}
 
 
-def portal(name, receiver, messages, *, members=None, protocol="facebook", encrypted=()):  # noqa: PLR0913 - a room's own parts
+def portal(name, receiver, messages, *, members=None, protocol="facebook", encrypted=(), sent_by=BOT):  # noqa: PLR0913 - a room's own parts
     """A bridged Messenger room, with its `m.bridge` state and `messages` as text events."""
     bridge = {
-        "bridgebot": "@bridgebot:made-up",
+        "bridgebot": sent_by,
         "protocol": {"id": protocol, "displayname": "Made-up Network"},
         "channel": {"id": "made-up-thread", "displayname": name, "fi.mau.receiver": receiver},
     }
     if not receiver:
         del bridge["channel"]["fi.mau.receiver"]
-    state = [_event("m.bridge", bridge, key="made-up-bridge-id"), _event("m.room.name", {"name": name}, key="")]
+    state = [
+        _event("m.bridge", bridge, key="made-up-bridge-id", sender=sent_by),
+        _event("m.room.name", {"name": name}, key=""),
+    ]
     state += [
         _event("m.room.member", {"displayname": shown, "membership": "join"}, key=who)
         for who, shown in (members or {}).items()

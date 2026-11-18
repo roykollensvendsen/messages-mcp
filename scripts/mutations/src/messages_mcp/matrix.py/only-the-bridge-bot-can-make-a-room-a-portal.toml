@@ -1,0 +1,5 @@
+[[rule]]
+name = "only the bridge bot can make a room a portal"
+file = "src/messages_mcp/matrix.py"
+find = 'bridge: dict\[str, Any\] \| None = next\('
+replace = '    bridge: dict[str, Any] | None = next((e.get("content") for e in reversed(events) if e.get("type") == BRIDGE), None)'

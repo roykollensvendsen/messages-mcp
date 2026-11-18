@@ -9,7 +9,7 @@ import pytest
 from homeserver import ELEMENT_TOKEN, OWNER, PLUGIN_TOKEN, plain, portal, serving, text
 
 from messages_mcp.device import NotSetUpError, UnreachableError
-from messages_mcp.matrix import MatrixInbox, on_this_laptop
+from messages_mcp.matrix import MatrixInbox, bot_of, on_this_laptop
 
 FRIEND = "@meta_made-up-1:made-up"
 COACH = "@meta_made-up-2:made-up"
@@ -140,7 +140,8 @@ def test_a_login_file_without_a_token_is_no_login(tmp_path):
 def test_a_synapse_that_is_down_is_unreachable(tmp_path):
     path = tmp_path / "matrix-login.json"
     # Port 9 (discard) has no listener here, so the connection is refused at once.
-    path.write_text(json.dumps({"homeserver": "http://127.0.0.1:9", "access_token": PLUGIN_TOKEN}))
+    login = {"homeserver": "http://127.0.0.1:9", "access_token": PLUGIN_TOKEN, "user_id": OWNER}
+    path.write_text(json.dumps(login))
     with pytest.raises(UnreachableError):
         asyncio.run(MatrixInbox(path).chats())
 
@@ -176,4 +177,34 @@ def test_the_plugin_talks_only_to_a_synapse_on_this_laptop(tmp_path):
     path = tmp_path / "matrix-login.json"
     path.write_text(json.dumps({"homeserver": "https://made-up.example.invalid", "access_token": PLUGIN_TOKEN}))
     with pytest.raises(NotSetUpError, match="not on this laptop"):
+        asyncio.run(MatrixInbox(path).chats())
+
+
+def test_only_the_bridge_bot_can_make_a_room_a_portal(tmp_path):
+    """voice-architect f1 on #7: a member who sets an m.bridge state of their own makes no portal."""
+    rooms = {
+        "!real:made-up": portal("Made-up Real", "made-up-login-1", [text(FRIEND, "Made-up", 1)]),
+        "!forged:made-up": portal("Made-up Forged", "made-up-login-1", [text(FRIEND, "Made-up", 2)], sent_by=FRIEND),
+        "!other-server:made-up": portal(
+            "Made-up Elsewhere", "made-up-login-1", [text(FRIEND, "Made-up", 3)], sent_by="@facebookbot:made-up.invalid"
+        ),
+    }
+    assert [chat.name for chat in _read(tmp_path, rooms)[0]] == ["Made-up Real"]
+
+
+def test_a_later_forged_m_bridge_state_does_not_hide_the_bots(tmp_path):
+    room = portal("Made-up Chat", "made-up-login-1", [text(FRIEND, "Made-up", 1)])
+    forged = dict(room["state"][0], sender=FRIEND, content={"protocol": {"id": "made-up-net"}})
+    room["timeline"].append(forged)
+    assert [chat.name for chat in _read(tmp_path, {"!r:made-up": room})[0]] == ["Made-up Chat"]
+
+
+def test_the_bot_is_on_the_owners_own_server():
+    assert bot_of(OWNER) == "@facebookbot:made-up-laptop.example.invalid"
+
+
+def test_a_login_that_names_no_user_is_no_login(tmp_path):
+    path = tmp_path / "matrix-login.json"
+    path.write_text(json.dumps({"homeserver": "http://127.0.0.1:9", "access_token": PLUGIN_TOKEN}))
+    with pytest.raises(NotSetUpError, match="names no Matrix user"):
         asyncio.run(MatrixInbox(path).chats())
