@@ -80,6 +80,10 @@ class Drafts:
             return STALE
         return draft
 
+    def take(self, token: str) -> None:
+        """Remove the draft `token` names: it was confirmed, and is never confirmed again."""
+        self._by_token.pop(token, None)
+
     def _sweep(self, now: float) -> None:
         """Drop every expired draft, to anyone, so none outlives its 15 minutes in memory."""
         for token in [t for t, d in self._by_token.items() if self._expired(d, now)]:

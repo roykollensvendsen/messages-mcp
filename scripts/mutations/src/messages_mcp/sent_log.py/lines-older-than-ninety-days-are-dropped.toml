@@ -1,0 +1,5 @@
+[[rule]]
+name = "lines older than ninety days are dropped"
+file = "src/messages_mcp/sent_log.py"
+find = 'kept = \[line for line in lines if dt\.datetime\.fromisoformat\(line\["at"\]\) >= oldest\]'
+replace = '        kept = list(lines)'
