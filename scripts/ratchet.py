@@ -504,6 +504,11 @@ def measure_at(ref: str, repo: Path | None = None) -> dict[str, Any]:
     with temproot.run_folder(RATCHET_TMP) as tmp:
         copy, out = tmp / "base", tmp / "levels.json"
         copy_of(ref, copy, repo)
+        # A repository's first pull request lands on a main that holds only its licence.
+        # RULE: a base with no project yet has no levels to fall below
+        if not (copy / "pyproject.toml").exists():
+            sys.stdout.write(f"{ref} has no pyproject.toml yet, so there are no levels to fall below.\n")
+            return {}
         env = {k: v for k, v in os.environ.items() if k not in OTHER_ENVIRONMENT}
         env |= {"RATCHET_ROOT": str(copy), "TMPDIR": str(tmp)}
         synced = _run("uv", "sync", "--locked", "--all-extras", cwd=copy, env=env)

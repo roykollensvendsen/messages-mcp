@@ -260,6 +260,21 @@ def _before(ids: list[str], tree: pathlib.Path, python: list[str]) -> dict[str, 
         return dict.fromkeys(ids, "failed")
 
 
+def _before_or_none(
+    ids: list[str], tree: pathlib.Path, setup: Callable[[pathlib.Path], list[str]]
+) -> dict[str, Outcome]:
+    """The outcomes on the old code, where a base with no project yet has no code to pass on.
+
+    A repository's first pull request lands on a main that holds only its licence. Nothing there
+    can be installed, so every counted test fails there. Any other base is set up as before.
+    """
+    # RULE: a base with no project yet counts every test as failed before the change
+    if not (tree / "pyproject.toml").exists():
+        print("The code before the change has no pyproject.toml yet; so every counted test counts as failed there.")
+        return dict.fromkeys(ids, "failed")
+    return _before(ids, tree, setup(tree))
+
+
 def _branch(ids: list[str], tree: pathlib.Path, python: list[str]) -> dict[str, Outcome]:
     """The outcomes on the branch, where a run that cannot even start fails the check."""
     try:
@@ -290,7 +305,7 @@ def run_both(
         try:
             before_tree(base, head, trees[0], cwd=cwd)
             _git("worktree", "add", "--detach", "--quiet", str(trees[1]), head, cwd=cwd)
-            return _before(ids, trees[0], setup(trees[0])), _branch(ids, trees[1], setup(trees[1]))
+            return _before_or_none(ids, trees[0], setup), _branch(ids, trees[1], setup(trees[1]))
         finally:
             for tree in trees:
                 with contextlib.suppress(subprocess.CalledProcessError):
