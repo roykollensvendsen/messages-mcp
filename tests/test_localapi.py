@@ -140,3 +140,10 @@ def test_whois_names_an_ipv6_caller_in_brackets(tmp_path, monkeypatch):
     queries = [urllib.parse.parse_qs(urllib.parse.urlsplit(path).query)["addr"] for path in asked]
     assert queries == [["[2001:db8::7]:41641"], ["192.0.2.7:41641"]]
     assert "[" not in asked[0], "the address is encoded in the query"
+
+
+def test_the_laptops_own_tailnet_name(tmp_path, monkeypatch):
+    status = {"Self": {"DNSName": "made-up-laptop.example.invalid.", "TailscaleIPs": ["192.0.2.7"]}}
+    assert _ask(tmp_path, monkeypatch, _ok(status), lambda api: api.own_name()) == "made-up-laptop.example.invalid"
+    with pytest.raises(LocalAPIError, match="no tailnet name"):
+        _ask(tmp_path, monkeypatch, _ok({"Self": {"DNSName": ""}}), lambda api: api.own_name())

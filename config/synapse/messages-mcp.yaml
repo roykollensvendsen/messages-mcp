@@ -1,0 +1,48 @@
+# messages-mcp's settings for Synapse. Its unit reads them after the generated homeserver.yaml,
+# and Synapse lets a later file's top-level key replace the earlier one's whole value.
+# tests/test_fragments.py holds every key here.
+# Made-up values only: nothing here names a real device, place or person.
+
+# Only on this laptop: matrix-door is the one way in from the tailnet (docs/setup.md, step 3).
+listeners:
+  - port: 8008
+    bind_addresses: ["127.0.0.1"]
+    type: http
+    tls: false
+    x_forwarded: false
+    resources:
+      - names: [client]
+        compress: false
+
+# A push says only that something is new: the phone fetches the message itself, through the door.
+push:
+  include_content: false
+
+# Nobody sees the owner as online.
+presence:
+  enabled: false
+
+# Messages go after 30 days, with a purge each day (messenger-v1, retention).
+retention:
+  enabled: true
+  default_policy:
+    max_lifetime: 30d
+  allowed_lifetime_max: 30d
+  purge_jobs:
+    - interval: 1d
+
+# One user, made by the owner (docs/setup.md, owner step D); nobody signs up.
+enable_registration: false
+
+# No other server is ever asked or answered.
+federation_domain_whitelist: []
+allow_public_rooms_over_federation: false
+allow_public_rooms_without_auth: false
+
+# Nothing leaves the laptop on Synapse's own initiative.
+report_stats: false
+url_preview_enabled: false
+include_profile_data_on_invite: false
+# Synapse refuses to start with the second line and without the first.
+require_auth_for_profile_requests: true
+limit_profile_requests_to_users_who_share_rooms: true

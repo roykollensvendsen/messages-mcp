@@ -1,0 +1,5 @@
+[[rule]]
+name = "only matrix users on this laptop may use the bridge"
+file = "src/messages_mcp/bridge_config.py"
+find = 'result\["bridge"\] = '
+replace = 'pass'

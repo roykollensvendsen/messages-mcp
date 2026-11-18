@@ -1,21 +1,22 @@
-"""Command line for messages-mcp: serve the tools, say the gizmo's status once, or run matrix-door."""
+"""Command line for messages-mcp: serve the tools, say the status once, run matrix-door, or set it up."""
 
 from __future__ import annotations
 
 import argparse
 import asyncio
 import functools
+import pathlib
 import ssl
 import sys
 
-from messages_mcp import door, door_list, platform, settings
+from messages_mcp import bridge_config, door, door_cert, door_list, platform, settings
 from messages_mcp.device import Unconnected
 from messages_mcp.fake import FakeGizmo
-from messages_mcp.localapi import LocalAPI
+from messages_mcp.localapi import LocalAPI, LocalAPIError
 from messages_mcp.service import MessagesService
 
 #: Every verb this command has.
-COMMANDS: tuple[str, ...] = ("serve", "status", "door")
+COMMANDS: tuple[str, ...] = ("serve", "status", "door", "door-cert", "bridge-config")
 #: Help is laid out at one width on every terminal, so a page's copy of it stays true.
 HELP = functools.partial(argparse.HelpFormatter, width=100)
 
@@ -29,15 +30,18 @@ def main(argv: list[str] | None = None) -> int:
     for verb in (serve, status):
         verb.add_argument("--simulate", action="store_true", help="answer from the made-up gizmo")
     verbs.add_parser("door", formatter_class=HELP, help="let only the listed devices reach the inbox (matrix-door)")
+    verbs.add_parser("door-cert", formatter_class=HELP, help="renew matrix-door's certificate, a month ahead")
+    bridge = verbs.add_parser("bridge-config", formatter_class=HELP, help="put our settings into mautrix-meta's config")
+    bridge.add_argument("ours", type=pathlib.Path, help="our settings: config/mautrix-meta/messages-mcp.yaml")
+    bridge.add_argument("config", type=pathlib.Path, help="the config the bridge generated for itself")
     args = parser.parse_args(argv)
     try:
         configured = settings.load()
     except settings.SettingsError as broken:
         sys.stderr.write(f"{broken}\n")
         return 2
-    if args.command == "door":
-        return run_door(configured)
-    return _answer(args, configured)
+    runs = {"door": run_door, "door-cert": run_door_cert, "bridge-config": run_bridge_config}
+    return runs.get(args.command, _answer)(args, configured)
 
 
 def _answer(args: argparse.Namespace, configured: settings.Settings) -> int:
@@ -61,7 +65,7 @@ def _answer(args: argparse.Namespace, configured: settings.Settings) -> int:
     return 0  # pragma: no cover
 
 
-def run_door(configured: settings.Settings) -> int:
+def run_door(_args: argparse.Namespace, configured: settings.Settings) -> int:
     """Run matrix-door until stopped; 1, with the reason, when it cannot start."""
     here = platform.current()
     folder = here.config_home() / settings.CONFIG_DIR
@@ -80,7 +84,31 @@ def run_door(configured: settings.Settings) -> int:
         return 1
     except KeyboardInterrupt:  # pragma: no cover - a stop from the terminal
         return 0
+    finally:
+        log.flush()
     return 0  # pragma: no cover - serve runs until stopped
+
+
+def run_door_cert(_args: argparse.Namespace, configured: settings.Settings) -> int:
+    """Renew the door's certificate; 1, with the reason, when it cannot."""
+    api = LocalAPI(platform.current().tailscaled_socket(), door.WHOIS_TIMEOUT)
+    try:
+        door_cert.renew(api, *configured.door_files())
+    except door_cert.CertError as failed:
+        sys.stderr.write(f"the door's certificate was not renewed: {failed}\n")
+        return 1
+    return 0  # pragma: no cover - only with a real tailscaled
+
+
+def run_bridge_config(args: argparse.Namespace, _configured: settings.Settings) -> int:
+    """Merge our settings into the bridge's config, for this laptop's name; 1 when it cannot."""
+    api = LocalAPI(platform.current().tailscaled_socket(), door.WHOIS_TIMEOUT)
+    try:
+        bridge_config.apply(args.ours, args.config, asyncio.run(api.own_name()))
+    except (LocalAPIError, bridge_config.BridgeConfigError) as failed:
+        sys.stderr.write(f"{failed}; {args.config} left as it was\n")
+        return 1
+    return 0
 
 
 if __name__ == "__main__":

@@ -68,3 +68,45 @@ def test_a_list_whose_folder_cannot_be_opened_is_refused(tmp_path):
             door_list.allowed(folder / "door.toml")
     finally:
         folder.chmod(0o700)
+
+
+def test_a_device_list_is_read_through_the_descriptor_that_was_checked(tmp_path, monkeypatch):
+    """A list swapped for a link between its check and its read is still refused (quality's n2 on #3)."""
+    import pathlib
+
+    planted = _written(tmp_path, '[[device]]\nname = "planted"\nid = "nFAKE0PLANTED0ID"\n')
+    (tmp_path / "checked").mkdir()
+    looked_at = _written(tmp_path / "checked", LIST)
+    swapped = tmp_path / "swapped.toml"
+    swapped.symlink_to(planted)
+    # What a check made just before the swap would have seen: a plain file of the owner's.
+    monkeypatch.setattr(pathlib.Path, "lstat", lambda _self: looked_at.stat())
+    with pytest.raises(door_list.DoorListError, match="is a link"):
+        door_list.allowed(swapped)
+
+
+def test_a_device_list_that_is_not_a_plain_file_is_refused_without_waiting(tmp_path):
+    """A pipe in the list's place is refused at once; opening it never waits for a writer."""
+    import os
+    import threading
+
+    pipe = tmp_path / "door.toml"
+    os.mkfifo(pipe, 0o600)
+    got = []
+
+    def read():
+        try:
+            door_list.allowed(pipe)
+        except door_list.DoorListError as refused:
+            got.append(str(refused))
+
+    reader = threading.Thread(target=read, daemon=True)
+    reader.start()
+    reader.join(2)
+    waited = reader.is_alive()
+    if waited:
+        # Let the stuck read go: a writer that opens and closes gives it an end.
+        os.close(os.open(pipe, os.O_WRONLY | os.O_NONBLOCK))
+        reader.join(2)
+    assert not waited, "the door waited on a pipe in the list's place"
+    assert got and "not a plain file" in got[0]

@@ -56,3 +56,36 @@ def test_the_door_with_no_tailscaled_will_not_start(own_folders, capsys):
     (own_folders / "config.toml").write_text(f'[door]\ncert = "{cert}"\nkey = "{key}"\n')
     assert cli.main(["door"]) == 1
     assert "matrix-door cannot run" in capsys.readouterr().err
+
+
+@pytest.mark.usefixtures("own_folders")
+def test_renewing_the_doors_certificate_with_no_tailscaled_says_so(capsys):
+    assert cli.main(["door-cert"]) == 1
+    assert "not renewed" in capsys.readouterr().err
+
+
+def test_the_bridge_gets_our_settings_for_this_laptops_name(own_folders, monkeypatch, capsys):
+    import pathlib
+
+    import yaml
+
+    async def own_name(_self):
+        return "made-up-laptop.example.invalid"
+
+    monkeypatch.setattr(cli.LocalAPI, "own_name", own_name)
+    config = own_folders / "bridge.yaml"
+    config.write_text("appservice:\n  as_token: made-up-as-token\n")
+    ours = pathlib.Path(__file__).parent.parent / "config/mautrix-meta/messages-mcp.yaml"
+    assert cli.main(["bridge-config", str(ours), str(config)]) == 0
+    merged = yaml.safe_load(config.read_text())
+    assert merged["homeserver"]["domain"] == "made-up-laptop.example.invalid"
+    out = capsys.readouterr()
+    assert "made-up-as-token" not in out.out + out.err, "the bridge's tokens are never printed"
+
+
+def test_the_bridge_config_with_no_tailscaled_is_left_alone(own_folders, capsys):
+    config = own_folders / "bridge.yaml"
+    config.write_text("appservice: {}\n")
+    assert cli.main(["bridge-config", "ours.yaml", str(config)]) == 1
+    assert "left as it was" in capsys.readouterr().err
+    assert config.read_text() == "appservice: {}\n"

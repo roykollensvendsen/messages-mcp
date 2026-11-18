@@ -1,0 +1,5 @@
+[[rule]]
+name = "a device list is read through the descriptor that was checked"
+file = "src/messages_mcp/door_list.py"
+find = 'os\.O_RDONLY \| os\.O_NOFOLLOW \| os\.O_NONBLOCK \| os\.O_CLOEXEC'
+replace = 'return os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC)'

@@ -14,6 +14,7 @@ never passes as an open one.
 
 from __future__ import annotations
 
+import errno
 import os
 import stat
 import tomllib
@@ -32,19 +33,16 @@ class DoorListError(Exception):
 
 def allowed(path: pathlib.Path) -> frozenset[str]:
     """The StableIDs on the owner's list at `path`; none when there is no list."""
-    try:
-        found = path.lstat()
-    except FileNotFoundError:
+    fd = _opened(path)
+    if fd is None:
         return frozenset()
-    except OSError as broken:
-        msg = f"{path} cannot be read as a list of devices ({broken}); fix it, or remove it to let nobody in"
-        raise DoorListError(msg) from broken
-    _owned_alone(path, found)
-    try:
-        data = tomllib.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as broken:
-        msg = f"{path} cannot be read as a list of devices ({broken}); fix it, or remove it to let nobody in"
-        raise DoorListError(msg) from broken
+    with os.fdopen(fd, "rb") as listed:
+        _owned_alone(path, os.fstat(listed.fileno()))
+        try:
+            data = tomllib.loads(listed.read().decode("utf-8"))
+        except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as broken:
+            msg = f"{path} cannot be read as a list of devices ({broken}); fix it, or remove it to let nobody in"
+            raise DoorListError(msg) from broken
     devices = data.get("device", [])
     if not isinstance(devices, list) or not all(isinstance(d, dict) and isinstance(d.get("id"), str) for d in devices):
         msg = f"{path} must hold [[device]] tables, each with an id; see docs/setup.md"
@@ -52,11 +50,26 @@ def allowed(path: pathlib.Path) -> frozenset[str]:
     return frozenset(d["id"] for d in devices if d["id"])
 
 
+def _opened(path: pathlib.Path) -> int | None:
+    """The list, opened without following a link and without waiting; None when there is none."""
+    try:
+        # RULE: a device list is read through the descriptor that was checked
+        return os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
+    except FileNotFoundError:
+        return None
+    except OSError as broken:
+        # RULE: a device list that is a link is refused
+        if broken.errno == errno.ELOOP:
+            msg = f"{path} is a link; make it a file of its own"
+            raise DoorListError(msg) from broken
+        msg = f"{path} cannot be read as a list of devices ({broken}); fix it, or remove it to let nobody in"
+        raise DoorListError(msg) from broken
+
+
 def _owned_alone(path: pathlib.Path, found: os.stat_result) -> None:
-    """Refuse a list that is a link, belongs to someone else, or that others can read or change."""
-    # RULE: a device list that is a link is refused
-    if stat.S_ISLNK(found.st_mode):
-        msg = f"{path} is a link; make it a file of its own"
+    """Refuse a list that is not a plain file, belongs to someone else, or that others can read or change."""
+    if not stat.S_ISREG(found.st_mode):
+        msg = f"{path} is not a plain file; make it a file of its own"
         raise DoorListError(msg)
     # RULE: a device list that belongs to someone else is refused
     if found.st_uid != os.getuid():

@@ -1,0 +1,5 @@
+[[rule]]
+name = "a held-back count is written when its caller stops knocking"
+file = "src/messages_mcp/door.py"
+find = 'lines = self\._held\(now, lambda when'
+replace = 'lines: list[str] = []'

@@ -1,0 +1,5 @@
+[[rule]]
+name = "the certificate is renewed for this laptop by its tailnet name"
+file = "src/messages_mcp/door_cert.py"
+find = 'name = asyncio\.run\(api\.own_name\(\)\)'
+replace = 'name = "localhost"'
