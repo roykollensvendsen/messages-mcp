@@ -40,12 +40,19 @@ encryption:
   allow: false
   default: false
 
-# Kept on, though typing and receipts may come this way, until a test with a decoy account
-# measures what turning it off breaks [guess] (slice M12).
+# Off (voice-architect, M12): with no Matrix-side encryption, ephemeral events would carry
+# only the owner's receipts, typing and presence toward Messenger, and wall 1 wants none of
+# them. If encryption ever comes (deferred row D-enc), this goes back on with it. Owner step H
+# checks on a second account that messages still bridge both ways and nothing shows as seen.
 appservice:
-  ephemeral_events: true
+  ephemeral_events: false
   # It listens on this laptop only, for Synapse.
   hostname: 127.0.0.1
+  # The bot's name is set here, not left to the bridge's default, because messages-mcp trusts
+  # a room's m.bridge state only from this bot (BOT_USERNAME in src/messages_mcp/matrix.py).
+  # Changing it means making the registration again (owner step 6).
+  bot:
+    username: facebookbot
 
 # Warnings and errors only, so no message text reaches the bridge's log.
 logging:

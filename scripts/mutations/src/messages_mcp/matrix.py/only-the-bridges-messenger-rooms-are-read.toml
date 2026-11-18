@@ -1,5 +1,5 @@
 [[rule]]
 name = "only the bridges messenger rooms are read"
 file = "src/messages_mcp/matrix.py"
-find = 'if not bridge or \(bridge\.get'
+find = 'if not isinstance\(bridge, dict\) or \(bridge\.get'
 replace = '    if False:'

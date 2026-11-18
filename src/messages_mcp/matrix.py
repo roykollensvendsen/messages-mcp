@@ -2,9 +2,15 @@
 
 Wall 2 of three against "seen" reaching Messenger: this adapter asks Synapse one thing,
 `GET /sync` with `set_presence=offline` and no wait, and never sends a receipt, a private
-receipt, a typing notice, presence or a message. It has no method that could. Only the
-bridge's portal rooms count: a room is one when its `m.bridge` state names the Messenger
-connector, and the login it belongs to is that state's `channel["fi.mau.receiver"]`.
+receipt, a typing notice, presence or a message. It has no method that could. Each read is
+a full sync with no `since` token, so it carries no position between reads and always sees
+each room's newest events and whole state.
+
+Only the bridge's portal rooms count: a room is one when its `m.bridge` state names the
+Messenger connector and was sent by the bridge's own bot, `@facebookbot:<the owner's server>`.
+Our fragment sets that bot's name (`config/mautrix-meta/messages-mcp.yaml`), so a member who
+sets an `m.bridge` state of their own makes no room a portal. The login a portal belongs to is
+that state's `channel["fi.mau.receiver"]`.
 
 Unread counts are Synapse's `unread_notifications`, which move only when the owner's own
 Element sends a receipt. Element has public receipts off (owner step E), so that is the
@@ -31,6 +37,8 @@ log = logging.getLogger(__name__)
 
 #: mautrix-meta's network ID, in `m.bridge`'s `protocol.id` (its connector's `GetName`).
 PROTOCOL = "facebook"
+#: The bridge bot's username, as our fragment sets it in `appservice.bot.username`.
+BOT_USERNAME = "facebookbot"
 BRIDGE = "m.bridge"
 RECEIVER = "fi.mau.receiver"
 #: How many of each room's newest events one sync brings; a read shows at most 10 of them.
@@ -69,6 +77,7 @@ class MatrixInbox:
     async def chats(self) -> list[Chat]:
         """Every portal room, with its unread count and newest messages."""
         homeserver, token, owner = _login(self.login)
+        bot = bot_of(owner)
         started = time.monotonic()
         # mautrix and aiohttp are slow imports, and only a real read needs them.
         from aiohttp import ClientSession  # noqa: PLC0415
@@ -91,7 +100,7 @@ class MatrixInbox:
                 msg = "the inbox did not answer"
                 raise UnreachableError(msg) from failed
         rooms: dict[str, Any] = (synced or {}).get("rooms", {}).get("join", {})
-        chats = [chat for room in rooms.values() if (chat := _chat(room, owner)) is not None]
+        chats = [chat for room in rooms.values() if (chat := _chat(room, owner, bot)) is not None]
         log.info("read %d bridged chats of %d rooms in %.2f s", len(chats), len(rooms), time.monotonic() - started)
         return chats
 
@@ -117,7 +126,16 @@ def _login(path: pathlib.Path) -> tuple[str, str, str]:
     if not on_this_laptop(homeserver):
         msg = f"the login in {path} is for a server that is not on this laptop; run: messages-mcp login"
         raise NotSetUpError(msg)
-    return homeserver, token, str(login.get("user_id", ""))
+    owner = str(login.get("user_id", ""))
+    if ":" not in owner:
+        msg = f"the login in {path} names no Matrix user; run: messages-mcp login"
+        raise NotSetUpError(msg)
+    return homeserver, token, owner
+
+
+def bot_of(owner: str) -> str:
+    """The bridge bot's Matrix ID on the owner's own server."""
+    return f"@{BOT_USERNAME}:{owner.split(':', 1)[1]}"
 
 
 def _events(room: dict[str, Any], part: str) -> list[dict[str, Any]]:
@@ -125,11 +143,12 @@ def _events(room: dict[str, Any], part: str) -> list[dict[str, Any]]:
     return [e for e in events if isinstance(e, dict)]
 
 
-def _chat(room: dict[str, Any], owner: str) -> Chat | None:
+def _chat(room: dict[str, Any], owner: str, bot: str) -> Chat | None:
     """The chat in one synced room, or None when it is not a Messenger portal."""
     timeline = _events(room, "timeline")
-    state = _state([*_events(room, "state"), *timeline])
-    bridge = _bridge(state)
+    events = [*_events(room, "state"), *timeline]
+    state = _state(events)
+    bridge = _bridge(events, bot)
     if bridge is None:
         return None
     channel = bridge.get("channel") or {}
@@ -151,13 +170,18 @@ def _state(events: list[dict[str, Any]]) -> dict[tuple[str, str], dict[str, Any]
     return {(e.get("type", ""), e["state_key"]): e.get("content") or {} for e in events if "state_key" in e}
 
 
-def _bridge(state: dict[tuple[str, str], dict[str, Any]]) -> dict[str, Any] | None:
-    """The room's `m.bridge` content when it is a Messenger portal, or None."""
-    bridge = next((c for (kind, _), c in state.items() if kind == BRIDGE), None)
+def _bridge(events: list[dict[str, Any]], bot: str) -> dict[str, Any] | None:
+    """The `m.bridge` content the bridge's bot set, when the room is a Messenger portal; else None."""
+    # RULE: only the bridge bot can make a room a portal
+    bridge: dict[str, Any] | None = next((e.get("content") for e in reversed(events) if _from_bot(e, bot)), None)
     # RULE: only the bridges messenger rooms are read
-    if not bridge or (bridge.get("protocol") or {}).get("id") != PROTOCOL:
+    if not isinstance(bridge, dict) or (bridge.get("protocol") or {}).get("id") != PROTOCOL:
         return None
     return bridge
+
+
+def _from_bot(event: dict[str, Any], bot: str) -> bool:
+    return event.get("type") == BRIDGE and "state_key" in event and event.get("sender") == bot
 
 
 def _message(event: dict[str, Any], names: dict[str, str], owner: str) -> Message | None:

@@ -157,9 +157,15 @@ The bridge generates its own config, and `messages-mcp bridge-config` merges our
 online when typing. It logs warnings only, and reports to nobody. It talks to Synapse on this
 laptop and lets only that server's users use it.
 
-The bridge's config has no switch for read receipts or typing. It passes on what a Matrix
-client sends. So messages-mcp never sends them, and Element is set not to in owner step E. Owner
-step H checks whether a read still shows as seen on Messenger.
+The bridge's config has no switch for read receipts or typing toward Messenger. It passes on
+what a Matrix client sends, and three walls stop that:
+- Synapse sends the bridge no receipts, typing or presence at all (`appservice.ephemeral_events:
+  false`).
+- messages-mcp never sends them.
+- Element is set not to, in owner step E.
+
+Owner step H checks all three on a second account. The bridge's bot is named `facebookbot` in our
+settings, and messages-mcp reads a room only when that bot marked it as a Messenger chat.
 
 <!-- not run: it writes the bridge's config and starts services on the host -->
 ```
@@ -330,18 +336,29 @@ ntfy app shows its topic as connected. `stat -c %a ~/.local/state/ntfy/user.db` 
 These commands ran in the owner's own shell, so if it prints anything else, run
 `chmod 600 ~/.local/state/ntfy/user.db`.
 
-### H. Log in to Messenger through the bridge
+### H. Log in to Messenger through the bridge, and check that nothing shows as seen
 
 <!-- owner -->
-Why: it is a login to the owner's own account, with Messenger's encryption PIN.
+Why: it is a login to the owner's own account, with Messenger's encryption PIN. The check needs a
+second, real Messenger account that the owner chooses, such as one of the owner's own or a family
+member's, with that person's yes. Meta's terms forbid made-up accounts, so none is made for this.
 
 Log in to account 1 in a plain terminal. Account 2 follows a week later, if account 1 had no
 lock.
 
-Check: the bridge's management room in Element says the account is logged in. Then have a
-message sent to account 1 from another Messenger account, read it in Element on each device, and
-look at it on the sender's side. It must not show as seen. If it does, stop here and tell the
-manager: something still passes a read on to Messenger.
+Check: do these with the second account on its own phone or browser, beside the laptop.
+1. From the second account, send account 1 a message that says only "test 1". It appears in
+   Element within a minute.
+2. In Element, reply "test 2". It reaches the second account within a minute.
+3. Send "test 3" from the second account. Open it in Element on the laptop and on the phone.
+   Wait two minutes. On the second account, "test 3" must not show as seen or read.
+4. In Element, type in the reply box for ten seconds without sending. The second account must
+   not show account 1 as typing.
+5. On the second account, account 1 must not show as active or online.
+
+If 1 or 2 fails, the bridge does not bridge: tell the manager. If 3, 4 or 5 fails, stop here.
+Log the bridge out with `logout` in its management room. Then tell the manager which one failed:
+something still passes a read, typing or presence on to Messenger.
 
 ### I. Give the plugin its own login to the inbox
 
@@ -360,6 +377,8 @@ messages-mcp login
 
 Check: it says `Logged in as device ...`, `stat -c %a ~/.config/messages-mcp/matrix-login.json`
 prints `600`, and `messages-mcp unread` says what is new rather than that it is not logged in.
+Then send "test 4" from the second account in step H, and run `messages-mcp unread`. It names
+"test 4", and after two minutes the second account still does not show it as seen.
 
 ### J. Approve the plugin
 
