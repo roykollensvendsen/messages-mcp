@@ -1,0 +1,5 @@
+[[rule]]
+name = "a tailnet name is never committed"
+file = "scripts/private_data_scan.py"
+find = 'a tailnet name" for m in TAILNET_NAME'
+replace = 'pass'

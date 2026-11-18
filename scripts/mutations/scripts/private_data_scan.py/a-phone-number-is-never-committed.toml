@@ -1,0 +1,5 @@
+[[rule]]
+name = "a phone number is never committed"
+file = "scripts/private_data_scan.py"
+find = 'a phone number" for m in PHONE'
+replace = 'pass'

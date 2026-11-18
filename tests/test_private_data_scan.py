@@ -31,6 +31,21 @@ def test_a_session_link_is_never_committed():
     assert private_data_scan.offences("Claude-" + "Session: x", set())
 
 
+def test_a_tailnet_name_is_never_committed():
+    """A device's tailnet name says which tailnet is the owner's; examples keep it in brackets."""
+    assert private_data_scan.offences("server_name = laptop.tail1234" + ".ts.net", set())
+    assert private_data_scan.offences("https://PHONE.example" + ".TS.NET:8448", set())
+    assert private_data_scan.offences("server_name = <laptop>.<tailnet>.ts.net", set()) == []
+
+
+def test_a_phone_number_is_never_committed():
+    """Made up or not, a number in a fixture may be someone's; examples write +<country><number>."""
+    for number in ("+47" + " 900 00 000", "+1-555" + "-0100-123", "+" + "4790000000"):
+        assert private_data_scan.offences(f"to {number}", set()), number
+    for fine in ("to +<country><number>", "version 3.12+1", "a sum of +12"):
+        assert private_data_scan.offences(fine, set()) == [], fine
+
+
 def test_a_word_from_the_private_list_is_never_committed(tmp_path):
     words = tmp_path / "private.toml"
     words.write_text('words = ["Garasje Bakgarden", "abc"]\n')
