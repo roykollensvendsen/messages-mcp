@@ -32,6 +32,7 @@ import pathlib
 import re
 import subprocess
 import sys
+import time
 import tomllib
 from typing import Any
 
@@ -341,10 +342,16 @@ def mutate_one(rule: dict, here: pathlib.Path, lost: list[str]) -> Result | None
     RECOVERY.write_text(json.dumps({"file": rule["file"], "original": text, "mutated": mutated}), encoding="utf-8")
     path.write_text(mutated, encoding="utf-8")
     own = test_name_for(rule["name"])
+    # Sent at once, not held until the run ends: in CI the output is a pipe, so a
+    # run that hangs would otherwise leave no word of which rule it hung on.
+    # RULE: a mutation run names each rule before it tests it
+    print(f"testing  {rule['name']}", flush=True)
+    began = time.monotonic()
     try:
         # Only the files holding the rule's own test: the suite once per rule outgrew
         # the time the check has. A rule with no test of its own runs the whole suite.
         count, failed = run_suite(files_naming(own), here)
+        took = time.monotonic() - began
     finally:
         if not restore(path, text, mutated):
             lost.append(rule["file"])
@@ -352,7 +359,7 @@ def mutate_one(rule: dict, here: pathlib.Path, lost: list[str]) -> Result | None
     # A kill by some other test is not evidence about this rule.
     by_its_own = own in failed
     verdict = "KILLED  " if by_its_own else ("BY LUCK " if count else "SURVIVED")
-    print(f"{verdict} {rule['name']}: {count}")
+    print(f"{verdict} {rule['name']}: {count} in {took:.0f} s", flush=True)
     return (rule["name"], rule["file"], count, own, by_its_own)
 
 
