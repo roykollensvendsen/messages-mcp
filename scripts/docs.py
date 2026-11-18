@@ -9,6 +9,9 @@
 - the steps under ``## Steps only the owner can do`` are marked ``<!-- owner -->``, and each
   says ``Why:`` only the owner can do it.
 
+The tests run only the blocks marked safe. A ``Check:`` line is never run, since it reads the
+state of the owner's machine, which a test does not have; the tests only make sure it is there.
+
 The README, for people, holds between ``<!-- steps:begin -->`` and ``<!-- steps:end -->`` the
 first line of each agent step and every owner step in full. This script writes that block:
 
