@@ -1,0 +1,5 @@
+[[rule]]
+name = "a tagged device is refused even when it is listed"
+file = "src/messages_mcp/door.py"
+find = 'if node\.get\("Tags"\):'
+replace = 'if False:'

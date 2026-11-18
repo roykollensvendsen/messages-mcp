@@ -1,0 +1,5 @@
+[[rule]]
+name = "a device list others can read or change is refused"
+file = "src/messages_mcp/door_list.py"
+find = 'if mode & \(stat\.S_IRWXG \| stat\.S_IRWXO\):'
+replace = 'if False:'

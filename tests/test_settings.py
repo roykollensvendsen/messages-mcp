@@ -45,3 +45,30 @@ def test_the_config_home_falls_back_to_the_home_folder(monkeypatch, tmp_path):
     monkeypatch.setenv("XDG_CONFIG_HOME", "")
     monkeypatch.setenv("HOME", str(tmp_path))
     assert Linux().config_home() == tmp_path / ".config"
+
+
+def test_the_doors_certificate_is_in_the_config_folder_unless_named(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    assert settings.Settings().door_files() == (tmp_path / "messages-mcp/door.crt", tmp_path / "messages-mcp/door.key")
+    path = tmp_path / "config.toml"
+    path.write_text('[door]\ncert = "/made/up.crt"\nkey = "/made/up.key"\n')
+    assert settings.load(path).door_files() == (pathlib.Path("/made/up.crt"), pathlib.Path("/made/up.key"))
+
+
+def test_a_door_key_the_plugin_does_not_know_is_refused_by_name(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text('[door]\ncrt = "x"\n')
+    with pytest.raises(settings.SettingsError, match=r"door\.crt"):
+        settings.load(path)
+
+
+def test_the_state_home_falls_back_to_the_home_folder(monkeypatch, tmp_path):
+    monkeypatch.delenv("XDG_STATE_HOME", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    assert Linux().state_home() == tmp_path / ".local/state"
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    assert Linux().state_home() == tmp_path / "state"
+
+
+def test_tailscaled_is_asked_on_its_own_socket():
+    assert Linux().tailscaled_socket() == pathlib.Path("/var/run/tailscale/tailscaled.sock")

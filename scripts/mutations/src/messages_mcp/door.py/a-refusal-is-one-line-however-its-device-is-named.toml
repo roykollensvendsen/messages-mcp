@@ -1,0 +1,5 @@
+[[rule]]
+name = "a refusal is one line however its device is named"
+file = "src/messages_mcp/door.py"
+find = 'line = "\\t"\.join\(re\.sub'
+replace = 'line = "\t".join(fields) + "\n"'

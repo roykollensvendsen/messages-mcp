@@ -1,0 +1,5 @@
+[[rule]]
+name = "the door will not start while Funnel opens one of its ports"
+file = "src/messages_mcp/door.py"
+find = 'if funnelled & ports:'
+replace = 'if False:'

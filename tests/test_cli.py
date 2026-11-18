@@ -31,3 +31,28 @@ def test_every_verb_is_one_the_command_takes():
         with pytest.raises(SystemExit) as shown:
             cli.main([verb, "--help"])
         assert shown.value.code == 0
+
+
+@pytest.fixture
+def own_folders(tmp_path, monkeypatch):
+    """Every folder the door could read or write, in the test's own folder."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("MESSAGES_MCP_CONFIG", str(tmp_path / "config.toml"))
+    monkeypatch.setattr(cli.platform.linux.Linux, "tailscaled_socket", lambda _self: tmp_path / "nobody.sock")
+    return tmp_path
+
+
+@pytest.mark.usefixtures("own_folders")
+def test_the_door_with_no_certificate_says_which_step_makes_one(capsys):
+    assert cli.main(["door"]) == 1
+    assert "step C" in capsys.readouterr().err
+
+
+def test_the_door_with_no_tailscaled_will_not_start(own_folders, capsys):
+    from test_door import _certificate
+
+    cert, key = _certificate(own_folders)
+    (own_folders / "config.toml").write_text(f'[door]\ncert = "{cert}"\nkey = "{key}"\n')
+    assert cli.main(["door"]) == 1
+    assert "matrix-door cannot start" in capsys.readouterr().err
