@@ -1,5 +1,5 @@
 [[rule]]
 name = "a text with a link is refused"
 file = "src/messages_mcp/drafts.py"
-find = 'if LINK\.search\(text\):'
+find = 'if link := LINK\.search\(text\):'
 replace = '    if False:'

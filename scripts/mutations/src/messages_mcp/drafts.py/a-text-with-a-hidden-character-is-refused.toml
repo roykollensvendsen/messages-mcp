@@ -1,0 +1,5 @@
+[[rule]]
+name = "a text with a hidden character is refused"
+file = "src/messages_mcp/drafts.py"
+find = 'if any\(not c\.isprintable\(\) and not c\.isspace\(\) for c in text\):'
+replace = '    if False:'

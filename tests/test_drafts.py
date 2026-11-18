@@ -88,7 +88,7 @@ def test_drafts_live_only_in_memory():
     ],
 )
 def test_a_text_with_a_link_is_refused(text):
-    assert refused_text(text) == "it has a link; send that from Element"
+    assert refused_text(text).endswith("” looks like a link; send that from Element")
 
 
 @pytest.mark.parametrize("text", ["the code is 123456", "call 12 34 56 78", "it's 4-8-15-16-23-42", "1.2.3.4.5.6"])
@@ -117,3 +117,37 @@ def test_writing_to_an_expired_draft_starts_a_new_one():
     new, replaced = drafts.write("made-up-login-1", "!room:made-up", "Made-up Friend", "Made-up two")
     assert (new.version, replaced) == (1, False)
     assert drafts.check(old.token, 1) == "there is no such draft"
+
+
+def test_two_words_joined_by_a_dot_are_taken_as_a_link_on_purpose():
+    """voice-architect f4 on #10: "done.Thanks" looks like a domain, and is refused; that is chosen."""
+    assert refused_text("done.Thanks") == "“done.Thanks” looks like a link; send that from Element"
+
+
+def test_a_full_date_is_taken_as_a_long_run_of_digits_on_purpose():
+    """voice-architect on #10: one-time codes are 6 digits, so a date like 18.11.2026 is refused too."""
+    assert refused_text("See you 18.11.2026") == "it has a long run of digits; send that from Element"
+
+
+def test_the_refusal_names_the_piece_that_looks_like_a_link():
+    """Quality n1 on #10: say back what matched, so a typo like "Ok.Ses" is easy to see."""
+    assert refused_text("Fine. Ok.Ses you") == "“Ok.Ses” looks like a link; send that from Element"
+
+
+@pytest.mark.parametrize("hidden", ["\u200b", "\u202e", "\x00", "\x1b", "\u2066"])
+def test_a_text_with_a_hidden_character_is_refused(hidden):
+    """Quality f1 on #10: a character the owner cannot hear is never sent."""
+    assert refused_text(f"Made-up{hidden} text") == "it has a hidden character in it; send that from Element"
+
+
+def test_line_breaks_are_not_hidden_characters():
+    assert refused_text("Made-up\nsecond line") is None
+
+
+def test_an_expired_draft_to_anyone_is_dropped_when_another_is_written():
+    """Quality n2 on #10: expired drafts do not linger in memory until their own chat is touched."""
+    drafts, clock = _drafts()
+    old, _ = drafts.write("made-up-login-1", "!a:made-up", "Made-up A", "Made-up")
+    clock.now += EXPIRY + 1
+    drafts.write("made-up-login-1", "!b:made-up", "Made-up B", "Made-up")
+    assert old.token not in drafts._by_token

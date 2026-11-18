@@ -1,0 +1,5 @@
+[[rule]]
+name = "the draft holds exactly the text that is read back"
+file = "src/messages_mcp/service.py"
+find = 'draft, replaced = self\._drafts\.write\(found\.receiver, found\.room, found\.name, clean\(text\)\)'
+replace = '        draft, replaced = self._drafts.write(found.receiver, found.room, found.name, text)'

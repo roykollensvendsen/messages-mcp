@@ -153,8 +153,9 @@ class MessagesService:
         refused = _refused_recipient(found) or _refused_words(text)
         if refused:
             return _failed("refused", refused)
-        draft, replaced = self._drafts.write(found.receiver, found.room, found.name, text)
-        say = _draft_say(found.name, labels[found.receiver], text, replaced=replaced)
+        # RULE: the draft holds exactly the text that is read back
+        draft, replaced = self._drafts.write(found.receiver, found.room, found.name, clean(text))
+        say = _draft_say(found.name, labels[found.receiver], draft.text, replaced=replaced)
         return _answered("draft", say, news, chat=found.name, token=draft.token, version=draft.version)
 
 
@@ -178,8 +179,8 @@ def _refused_words(text: str) -> str | None:
 
 
 def _draft_say(name: str, label: str | None, text: str, *, replaced: bool) -> str:
-    """The read-back of a draft, quoted so nothing in it can close the quote."""
-    shown = clean(text)
+    """The read-back of a draft, already cleaned, so nothing in it can close the quote."""
+    shown = text
     stop = "" if shown.endswith((".", "!", "?")) else "."
     where = f", from {label}" if label else ""
     before = f"This replaces the draft to “{name}”. " if replaced else ""
