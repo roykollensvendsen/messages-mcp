@@ -180,7 +180,7 @@ Check: `systemctl --user is-active mautrix-meta.service` prints `active`.
 nobody as an admin. That is enough to log in. For the bridge's admin commands, add the owner's
 own Matrix user to `bridge.permissions` in `~/.local/share/mautrix-meta/config.yaml`, as
 `"@<user>:<laptop>.<tailnet>.ts.net": admin`, and restart the bridge. A later `bridge-config`
-run takes the line out again.
+run keeps that line, and any admin line for a user on another server goes.
 
 ### 7. Add the plugin to claude-voice
 
@@ -246,9 +246,8 @@ operator setting also lets the owner's user drive Tailscale without `sudo`, whic
 can change it.
 
 Install Synapse and ntfy with the system's package manager, as each project's install docs say.
-Put mautrix-meta's binary for this laptop, from its release page, at `~/.local/bin/mautrix-meta`.
-If
-`tailscale cert` needs root for the owner's user, let it run without:
+Put mautrix-meta's binary for this laptop, from its release page, at `~/.local/bin/mautrix-meta`,
+and make it executable. If `tailscale cert` needs root for the owner's user, let it run without:
 
 ```
 sudo tailscale set --operator=$USER
@@ -264,8 +263,8 @@ tailscale cert --cert-file ~/.config/messages-mcp/door.crt \
 chmod 600 ~/.config/messages-mcp/door.key
 ```
 
-Check: `command -v ntfy` and `ls ~/.local/bin/mautrix-meta` each print a path, and `stat -c %a ~/.config/messages-mcp/door.key` prints
-`600`.
+Check: `command -v ntfy` and `ls ~/.local/bin/mautrix-meta` each print a path, and
+`stat -c %a ~/.config/messages-mcp/door.key` prints `600`.
 
 ### D. Create the Matrix user
 
@@ -322,7 +321,9 @@ Install the ntfy app on the phone. In Settings, Manage Users, Add New User, give
 `https://<laptop>.<tailnet>.ts.net:2586`, the user `phone` and that password.
 
 Check: `ntfy access --config ~/.config/ntfy/server.yml` lists only those two entries, and the
-ntfy app shows its topic as connected.
+ntfy app shows its topic as connected. `stat -c %a ~/.local/state/ntfy/user.db` prints `600`.
+These commands ran in the owner's own shell, so if it prints anything else, run
+`chmod 600 ~/.local/state/ntfy/user.db`.
 
 ### H. Log in to Messenger through the bridge
 

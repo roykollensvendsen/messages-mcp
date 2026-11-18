@@ -1,0 +1,5 @@
+[[rule]]
+name = "an admin on this laptops server keeps that right"
+file = "src/messages_mcp/bridge_config.py"
+find = 'return \{user: "admin" for user'
+replace = 'return {}'

@@ -3,7 +3,8 @@
 The bridge reads one config file only, so ours are merged into it: each of our keys wins, a key
 of ours that holds a map is merged key by key, and every other setting of the bridge's stays.
 The homeserver is the laptop's own, by its tailnet name, and only that server's users may use
-the bridge. The file holds the bridge's tokens, so it is written whole and kept at 0600.
+the bridge. An admin the owner added on that server keeps that right. The file holds the
+bridge's tokens, so it is written whole and kept at 0600.
 """
 
 from __future__ import annotations
@@ -45,9 +46,23 @@ def apply(ours: pathlib.Path, config: pathlib.Path, domain: str) -> None:
         raise BridgeConfigError(msg)
     result = merged(theirs, wanted)
     result["homeserver"] = {**result.get("homeserver", {}), "domain": domain}
+    bridge = result.get("bridge", {})
     # RULE: only matrix users on this laptop may use the bridge
-    result["bridge"] = {**result.get("bridge", {}), "permissions": {domain: "user"}}
+    result["bridge"] = {**bridge, "permissions": {domain: "user", **_admins(bridge.get("permissions"), domain)}}
     write_private(config, yaml.safe_dump(result, sort_keys=False, allow_unicode=True))
+
+
+def _admins(before: object, domain: str) -> dict[str, str]:
+    """The admin entries in `before` that name one Matrix user on the server `domain`."""
+    entries = before if isinstance(before, dict) else {}
+    # RULE: an admin on this laptops server keeps that right
+    return {user: "admin" for user, level in entries.items() if _admin_on(user, level, domain)}
+
+
+def _admin_on(user: str, level: object, domain: str) -> bool:
+    """Whether `user`, at `level`, is an admin such as @name:domain on the server `domain`."""
+    name, _, server = user.partition(":")
+    return level == "admin" and name.startswith("@") and len(name) > 1 and server == domain
 
 
 def write_private(config: pathlib.Path, text: str) -> None:
