@@ -80,8 +80,15 @@ def test_the_bridge_talks_to_synapse_on_this_laptop_and_listens_here_only():
     assert bridge["bridge"]["bridge_matrix_leave"] is False
 
 
+def test_the_bridge_makes_no_encrypted_rooms():
+    """No Matrix-side encryption in v1, the owner's choice B (18.11); turning it on later is D-enc."""
+    encryption = _bridge()["encryption"]
+    assert encryption["allow"] is False
+    assert encryption["default"] is False
+
+
 def test_the_bridge_keeps_ephemeral_events_on_until_measured():
-    """Off might break encryption; a decoy test settles it later (voice-architect, M5)."""
+    """What turning it off breaks is measured with a decoy account first (slice M12)."""
     assert _bridge()["appservice"]["ephemeral_events"] is True
 
 

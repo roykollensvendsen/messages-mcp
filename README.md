@@ -3,8 +3,9 @@
 Messages by voice: SMS and chat messages, read from a Matrix inbox of your own. This is an MCP
 server that a voice assistant reaches through claude-voice, as one of its plugins.
 
-It is being built in slices. For now it holds only the template's walking skeleton: one tool,
-`messages_status`, answered by a made-up gizmo in `fake.py`. The reading tools replace it.
+It is being built in slices. The reading tools are here: `messages_unread`, `messages_read` and
+`messages_chats`. They read the bridged Messenger chats and never mark anything read. Sending
+comes in v1 after the reading part, in a slice of its own.
 
 It started from claude-voice's plugin template. The guide for writing one is
 `docs/write-a-plugin.md` in claude-voice, and `docs/plugin-standard.md` there holds the rules.
@@ -25,7 +26,7 @@ Every step there has a check. Some steps only the owner can do, and they are lis
 The steps, in full, are in [docs/setup.md](docs/setup.md):
 
 1. Install the project
-2. Hear the plugin answer from its made-up device
+2. Hear the plugin read made-up chats
 3. Put matrix-door in front of the inbox
 4. Set up Synapse behind the door
 5. Start ntfy behind the door
@@ -169,7 +170,24 @@ message sent to account 1 from another Messenger account, read it in Element on 
 look at it on the sender's side. It must not show as seen. If it does, stop here and tell the
 manager: something still passes a read on to Messenger.
 
-#### I. Approve the plugin
+#### I. Give the plugin its own login to the inbox
+
+Why: it asks for the owner's Matrix password, typed at a prompt that does not show it.
+
+The plugin gets a device of its own on the owner's Matrix user, called `messages-mcp (voice)`
+in Element's session list. The password is never kept; the token is, in
+`~/.config/messages-mcp/matrix-login.json`, readable by the owner only. The plugin only ever asks
+Synapse for a sync: it sends no read receipt, typing or presence, so reading by voice leaves
+every message unread. Sending comes in v1 after the reading part, in a slice of its own.
+
+```
+messages-mcp login
+```
+
+Check: it says `Logged in as device ...`, `stat -c %a ~/.config/messages-mcp/matrix-login.json`
+prints `600`, and `messages-mcp unread` says what is new rather than that it is not logged in.
+
+#### J. Approve the plugin
 
 Why: claude-voice runs a new plugin only once its owner has typed its name.
 
@@ -188,9 +206,12 @@ Check: `claude-voice plugins list` shows `messages` as approved.
 | Part | What it is for |
 |---|---|
 | `src/messages_mcp/server.py` | The MCP tools. Each answer carries a `say`, the sentence the voice reads aloud. |
-| `src/messages_mcp/service.py` | The core: it asks the gizmo and words every answer, failures included. |
-| `src/messages_mcp/device.py` | What the service needs from a gizmo. A real adapter answers it. |
-| `src/messages_mcp/fake.py` | A made-up gizmo that refuses what the real one refuses. |
+| `src/messages_mcp/service.py` | The core: it reads the inbox and words every answer, failures included. Other people's words come back quoted and marked untrusted. |
+| `src/messages_mcp/device.py` | What the service needs from an inbox: chats and their messages. |
+| `src/messages_mcp/matrix.py` | The real inbox: one sync with Synapse, nothing sent, nothing logged but counts. |
+| `src/messages_mcp/login.py` | The plugin's own Matrix login, kept for the owner only. |
+| `src/messages_mcp/accounts.py` | What the voice calls each Messenger login, once there are two. |
+| `src/messages_mcp/fake.py` | Made-up chats, for `--simulate` and the tests. |
 | `src/messages_mcp/settings.py` | The plugin's own config, from its own folder. |
 | `src/messages_mcp/platform/` | The one place that knows the operating system. |
 | `scripts/ratchet.py` | The quality levels, which may never get worse than main's. |

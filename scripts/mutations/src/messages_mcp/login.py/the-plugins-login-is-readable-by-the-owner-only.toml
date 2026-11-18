@@ -1,0 +1,5 @@
+[[rule]]
+name = "the plugins login is readable by the owner only"
+file = "src/messages_mcp/login.py"
+find = 'write_private\(path, json\.dumps\(kept\)\)'
+replace = '    path.write_text(json.dumps(kept))'

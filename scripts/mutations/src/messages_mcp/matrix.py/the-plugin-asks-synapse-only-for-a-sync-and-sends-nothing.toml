@@ -1,0 +1,5 @@
+[[rule]]
+name = "the plugin asks synapse only for a sync and sends nothing"
+file = "src/messages_mcp/matrix.py"
+find = 'set_presence=PresenceState\.OFFLINE,'
+replace = '                    set_presence=PresenceState.ONLINE,'

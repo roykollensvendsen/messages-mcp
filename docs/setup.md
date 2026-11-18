@@ -39,18 +39,18 @@ uv sync --all-extras
 git config core.hooksPath .githooks
 ```
 
-Check: `uv run messages-mcp --help` lists the `status` command.
+Check: `uv run messages-mcp --help` lists the `unread` command.
 
-### 2. Hear the plugin answer from its made-up device
+### 2. Hear the plugin read made-up chats
 
-For now this is the template's walking skeleton. The reading tools replace it.
+`--simulate` reads the made-up chats in `src/messages_mcp/fake.py`, never the real inbox.
 
 <!-- safe-to-run -->
 ```
-uv run messages-mcp status --simulate
+uv run messages-mcp unread --simulate
 ```
 
-Check: it prints one sentence for the voice and exits with 0.
+Check: it prints what the voice would say, starting with `Simulated:`, and exits with 0.
 
 ### 3. Put matrix-door in front of the inbox
 
@@ -94,6 +94,11 @@ Synapse listens on 127.0.0.1:8008 only, so matrix-door is the one way to it. Our
 - nobody sees the owner as online;
 - messages go after 30 days;
 - it talks to no other server, and nobody can sign up.
+
+Messages rest unencrypted in Synapse's database on this laptop for at most 30 days. The bridge
+makes no encrypted Matrix rooms in v1: everything runs on this laptop behind Tailscale, and
+Messenger's own encryption ends in the bridge here either way. Encrypting the rooms later is
+one way, since Matrix cannot take encryption off a room again.
 
 `bridge.yaml` names the bridge to Synapse, and stays empty until step 6.
 
@@ -184,7 +189,7 @@ run keeps that line, and any admin line for a user on another server goes.
 
 ### 7. Add the plugin to claude-voice
 
-**Not built yet:** the reading tools come with the build's read slice. Wait for owner step I.
+Wait for owner step I. The plugin reads nothing until it has its own login.
 
 <!-- not run: it changes the owner's own bridge config -->
 ```
@@ -338,7 +343,25 @@ message sent to account 1 from another Messenger account, read it in Element on 
 look at it on the sender's side. It must not show as seen. If it does, stop here and tell the
 manager: something still passes a read on to Messenger.
 
-### I. Approve the plugin
+### I. Give the plugin its own login to the inbox
+
+<!-- owner -->
+Why: it asks for the owner's Matrix password, typed at a prompt that does not show it.
+
+The plugin gets a device of its own on the owner's Matrix user, called `messages-mcp (voice)`
+in Element's session list. The password is never kept; the token is, in
+`~/.config/messages-mcp/matrix-login.json`, readable by the owner only. The plugin only ever asks
+Synapse for a sync: it sends no read receipt, typing or presence, so reading by voice leaves
+every message unread. Sending comes in v1 after the reading part, in a slice of its own.
+
+```
+messages-mcp login
+```
+
+Check: it says `Logged in as device ...`, `stat -c %a ~/.config/messages-mcp/matrix-login.json`
+prints `600`, and `messages-mcp unread` says what is new rather than that it is not logged in.
+
+### J. Approve the plugin
 
 <!-- owner -->
 Why: claude-voice runs a new plugin only once its owner has typed its name.

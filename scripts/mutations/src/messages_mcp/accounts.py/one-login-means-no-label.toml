@@ -1,0 +1,5 @@
+[[rule]]
+name = "one login means no label"
+file = "src/messages_mcp/accounts.py"
+find = 'several = len\(self\._numbers\) > 1$'
+replace = '        several = True'

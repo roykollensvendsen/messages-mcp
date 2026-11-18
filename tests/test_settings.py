@@ -21,14 +21,14 @@ def test_the_shipped_default_config_loads_as_the_defaults():
 
 def test_a_key_the_plugin_does_not_know_is_refused_by_name(tmp_path):
     path = tmp_path / "config.toml"
-    path.write_text('[device]\naddres = "x"\n[other]\n')
-    with pytest.raises(settings.SettingsError, match=r"device\.addres, other|other, device\.addres"):
+    path.write_text("[inbox]\nsimulat = true\n[other]\n")
+    with pytest.raises(settings.SettingsError, match=r"inbox\.simulat, other|other, inbox\.simulat"):
         settings.load(path)
 
 
 def test_a_config_that_is_not_toml_says_how_to_fix_it(tmp_path):
     path = tmp_path / "config.toml"
-    path.write_text("[device\n")
+    path.write_text("[inbox\n")
     with pytest.raises(settings.SettingsError, match="delete it to use the defaults"):
         settings.load(path)
 
@@ -72,3 +72,17 @@ def test_the_state_home_falls_back_to_the_home_folder(monkeypatch, tmp_path):
 
 def test_tailscaled_is_asked_on_its_own_socket():
     assert Linux().tailscaled_socket() == pathlib.Path("/var/run/tailscale/tailscaled.sock")
+
+
+def test_the_owner_may_name_logins_and_point_at_another_synapse(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text('[inbox]\nhomeserver = "http://127.0.0.1:9"\n[accounts]\n"made-up-login-2" = "work"\n')
+    loaded = settings.load(path)
+    assert loaded.homeserver == "http://127.0.0.1:9"
+    assert loaded.accounts == {"made-up-login-2": "work"}
+    assert loaded.simulate is False
+
+
+def test_the_login_is_kept_in_the_plugin_s_own_folder(monkeypatch, tmp_path):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    assert settings.Settings().login_file() == tmp_path / "messages-mcp" / "matrix-login.json"

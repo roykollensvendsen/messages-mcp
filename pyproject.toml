@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Messages by voice, SMS and chat, through a Matrix inbox of your own: an MCP server and claude-voice plugin."
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = ["mcp>=2.3", "pyyaml>=6"]
+dependencies = ["mautrix>=0.21,<0.22", "mcp>=2.3", "pyyaml>=6"]
 
 [project.scripts]
 messages-mcp = "messages_mcp.cli:main"

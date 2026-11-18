@@ -1,53 +1,65 @@
-"""A made-up gizmo that refuses what the real one refuses.
+"""A made-up inbox, with chats and people that do not exist.
 
-A fake that says yes to everything lets a test pass that the real device would fail. So this
-one keeps the device's limits: it answers at most `READS_PER_MINUTE` times a minute and then
-says how long to wait, and it can be told to stop answering, as a gizmo off the network does.
-Write each new limit of the real device in here first, with a test, before the code that
-copes with it.
+It answers exactly what the Matrix adapter answers, so the service and the tools are tested
+through the same door. It can be told to stop answering, as an inbox whose server is down.
 """
 
 from __future__ import annotations
 
-import time
-from typing import TYPE_CHECKING
+import datetime as dt
 
-from messages_mcp.device import Reading, SlowDownError, UnreachableError
+from messages_mcp.device import Chat, Message, UnreachableError
 
-if TYPE_CHECKING:
-    from collections.abc import Callable
-
-#: The made-up device's own limit on reads.
-READS_PER_MINUTE = 6
-WINDOW = 60.0
+#: A fixed moment, so a simulated answer is the same every time.
+NOW = dt.datetime(2026, 11, 18, 12, 0, tzinfo=dt.UTC)
 
 
-class FakeGizmo:
-    """A gizmo in memory, with the real one's limits."""
+def _ago(minutes: int) -> dt.datetime:
+    return NOW - dt.timedelta(minutes=minutes)
 
-    def __init__(
-        self,
-        *,
-        on: bool = True,
-        level: int = 40,
-        clock: Callable[[], float] = time.monotonic,
-    ) -> None:
-        """Start the fake in a known state; `clock` lets a test move time on."""
-        self.on = on
-        self.level = level
+
+#: The made-up chats `--simulate` reads: names, people and texts are all invented.
+MADE_UP = (
+    Chat(
+        name="Made-up Friend",
+        receiver="made-up-login-1",
+        unread=2,
+        last_at=_ago(5),
+        messages=(
+            Message("Made-up Friend", _ago(9), "Are you coming on Saturday?"),
+            Message("Made-up Friend", _ago(5), "Bring the made-up board game."),
+        ),
+    ),
+    Chat(
+        name="Made-up Football Group",
+        receiver="made-up-login-1",
+        unread=1,
+        last_at=_ago(30),
+        messages=(Message("Made-up Coach", _ago(30), "Training moves to seven."),),
+    ),
+    Chat(
+        name="Made-up Neighbour",
+        receiver="made-up-login-1",
+        unread=0,
+        last_at=_ago(60 * 24 * 3),
+        messages=(Message("Made-up Neighbour", _ago(60 * 24 * 3), "Thanks for the ladder."),),
+    ),
+)
+
+
+class FakeInbox:
+    """An inbox in memory, made of `chats`."""
+
+    def __init__(self, chats: tuple[Chat, ...] | list[Chat] = MADE_UP) -> None:
+        """Start with `chats`; the made-up ones by default."""
+        self.chats_held = list(chats)
         self.unreachable = False
-        self._clock = clock
-        self._reads: list[float] = []
+        self.asked = 0
 
-    async def read(self) -> Reading:
-        """The state, unless the gizmo is off the network or was asked too often."""
+    async def chats(self) -> list[Chat]:
+        """The chats, unless the inbox is off."""
+        self.asked += 1
         if self.unreachable:
-            msg = "the gizmo did not answer"
+            msg = "the inbox did not answer"
             raise UnreachableError(msg)
-        now = self._clock()
-        self._reads = [at for at in self._reads if now - at < WINDOW]
-        # RULE: the fake refuses a read sooner than the device allows
-        if len(self._reads) >= READS_PER_MINUTE:
-            raise SlowDownError(WINDOW - (now - self._reads[0]))
-        self._reads.append(now)
-        return Reading(on=self.on, level=self.level)
+        return list(self.chats_held)

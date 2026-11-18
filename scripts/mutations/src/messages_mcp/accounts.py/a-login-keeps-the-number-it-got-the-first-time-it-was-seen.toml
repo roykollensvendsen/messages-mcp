@@ -1,0 +1,5 @@
+[[rule]]
+name = "a login keeps the number it got the first time it was seen"
+file = "src/messages_mcp/accounts.py"
+find = 'for receiver in sorted\(seen - \{\"\"\} - set\(self\._numbers\)\):'
+replace = '        for receiver in sorted(seen - {""}):'

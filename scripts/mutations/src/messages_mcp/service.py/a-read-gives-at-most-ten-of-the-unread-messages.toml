@@ -1,0 +1,5 @@
+[[rule]]
+name = "a read gives at most ten of the unread messages"
+file = "src/messages_mcp/service.py"
+find = 'unread = found\.messages\[-min'
+replace = '        unread = found.messages if found.unread else ()'

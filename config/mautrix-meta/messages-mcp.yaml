@@ -31,9 +31,17 @@ bridge:
     enabled: false
     default_relays: []
 
-# Kept on, though typing and receipts may come this way: in encryption mode the to-device
-# events may too, and turning it off could break end-to-end encryption. Neither is measured
-# yet [guess]; a later test with a decoy account settles it.
+# No Matrix-side encryption in v1 (the owner's choice, 18.11): everything runs on this laptop
+# behind Tailscale, Messenger's own encryption ends in the bridge here either way, and the
+# plugin then needs no keys of its own. Messages rest unencrypted in Synapse's database here
+# for at most 30 days (the retention in config/synapse/messages-mcp.yaml). Turning it on later
+# is deferred row D-enc, and it is one way: Matrix cannot take encryption off a room again.
+encryption:
+  allow: false
+  default: false
+
+# Kept on, though typing and receipts may come this way, until a test with a decoy account
+# measures what turning it off breaks [guess] (slice M12).
 appservice:
   ephemeral_events: true
   # It listens on this laptop only, for Synapse.

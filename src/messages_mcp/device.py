@@ -1,56 +1,59 @@
-"""What the plugin needs from a gizmo, and the ways asking one can fail.
+"""What the plugin needs from the inbox, and the ways asking it can fail.
 
-The service talks to this and nothing else. The fake (`fake.py`) and the real adapter both
-answer it, so every test runs through the same door the real device does.
+The service talks to this and nothing else. The fake (`fake.py`) and the Matrix adapter
+(`matrix.py`) both answer it, so every test runs through the same door the real inbox does.
+Everything in a `Chat` or a `Message` comes from other people: names and text alike are
+untrusted, and none of it is ever logged.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Protocol
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Protocol
+
+if TYPE_CHECKING:
+    import datetime as dt
 
 
-class DeviceError(Exception):
-    """Asking the gizmo failed; each kind below is said to the voice in its own words."""
+class InboxError(Exception):
+    """Asking the inbox failed; each kind below is said to the voice in its own words."""
 
 
-class UnreachableError(DeviceError):
-    """The gizmo did not answer in time."""
+class UnreachableError(InboxError):
+    """The inbox did not answer in time."""
 
 
-class SlowDownError(DeviceError):
-    """The gizmo refuses to be asked again so soon."""
-
-    def __init__(self, seconds: float) -> None:
-        """Keep how long to wait, so the voice can say it."""
-        super().__init__(f"ask again in {seconds:.0f} s")
-        self.seconds = seconds
-
-
-class NotSetUpError(DeviceError):
-    """No real gizmo is set up, so nothing was asked."""
+class NotSetUpError(InboxError):
+    """The plugin has no login to the inbox yet, so nothing was asked."""
 
 
 @dataclass(frozen=True)
-class Reading:
-    """What the gizmo says about itself: whether it is on, and its level from 0 to 100."""
+class Message:
+    """One message: who sent it, when, and its text, or what kind of thing it is."""
 
-    on: bool
-    level: int
+    sender: str
+    at: dt.datetime
+    body: str = ""
+    #: "text", or what was sent instead: "picture", "voice message", "video", "file" or "other".
+    kind: str = "text"
 
 
-class Gizmo(Protocol):
-    """A gizmo the plugin can read."""
+@dataclass(frozen=True)
+class Chat:
+    """One bridged chat, with its newest messages, oldest first."""
 
-    async def read(self) -> Reading:
-        """The gizmo's state now."""
+    name: str
+    #: The bridge's login the chat belongs to; private, so it never leaves the plugin.
+    receiver: str
+    #: How many messages are unread, as the server counts them after the owner's own receipt.
+    unread: int
+    last_at: dt.datetime | None
+    messages: tuple[Message, ...] = field(default_factory=tuple)
+
+
+class Inbox(Protocol):
+    """An inbox the plugin can read, and only read."""
+
+    async def chats(self) -> list[Chat]:
+        """Every bridged chat, each with its unread count and newest messages."""
         ...
-
-
-class Unconnected:
-    """The real gizmo, until an adapter for it is written: every read says so."""
-
-    async def read(self) -> Reading:
-        """Refuse, naming the next step."""
-        msg = "no adapter for a real gizmo is written yet; run with --simulate"
-        raise NotSetUpError(msg)
