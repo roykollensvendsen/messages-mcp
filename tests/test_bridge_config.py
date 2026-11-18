@@ -95,3 +95,21 @@ def test_a_write_that_fails_half_way_leaves_the_old_config(tmp_path, monkeypatch
         bridge_config.apply(OURS, path, NAME)
     assert path.read_text() == before
     assert sorted(p.name for p in tmp_path.iterdir()) == ["config.yaml"], "no half-written file is left"
+
+
+def test_an_admin_on_this_laptops_server_keeps_that_right(tmp_path):
+    """A second run keeps the owner's own admin line, and nothing else from before (voice-architect, #5)."""
+    generated = {
+        **GENERATED,
+        "bridge": {
+            "permissions": {
+                f"@made-up-owner:{NAME}": "admin",
+                f"@made-up-guest:{NAME}": "user",
+                "@made-up-admin:elsewhere.invalid": "admin",
+                f"@{NAME}": "admin",
+                "*": "admin",
+            }
+        },
+    }
+    _, merged = _merged(tmp_path, generated)
+    assert merged["bridge"]["permissions"] == {NAME: "user", f"@made-up-owner:{NAME}": "admin"}
