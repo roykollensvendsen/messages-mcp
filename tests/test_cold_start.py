@@ -8,7 +8,7 @@ update.
 The time that counts is the server's own CPU time, not the clock: on a busy machine the
 clock measures the other work too, and a test on it failed with no change to the code. A
 start that waits instead of working costs no CPU, so two more tests close that gap: listing
-the tools asks the gizmo nothing, and no code sleeps. A loose limit on the clock, 60 s, ends a
+the tools asks the inbox nothing, and no code sleeps. A loose limit on the clock, 60 s, ends a
 start that hangs. The bridge's own 15 s limit is on the clock, in real use.
 
 These tests count the CPU of every child process this one waited for, so they assume the
@@ -27,6 +27,7 @@ import pytest
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
+from messages_mcp.accounts import Accounts
 from messages_mcp.server import TOOLS, build_server
 from messages_mcp.service import MessagesService
 
@@ -105,28 +106,32 @@ def test_a_heavy_start_is_caught_by_the_cpu_it_uses(tmp_path):
 
 
 class _Recording:
-    """A gizmo that keeps every read and answers none."""
+    """An inbox that keeps every read and answers none."""
 
     def __init__(self):
         self.asked = 0
 
-    async def read(self):
+    async def chats(self):
         self.asked += 1
         raise OSError
 
 
-def test_listing_the_tools_asks_the_gizmo_nothing():
-    """A start that waited on the device would cost no CPU, so it is refused here instead."""
-    gizmo = _Recording()
-    assert sorted(t.name for t in asyncio.run(build_server(MessagesService(gizmo)).list_tools())) == sorted(TOOLS)
-    assert gizmo.asked == 0
+def _service(inbox):
+    return MessagesService(inbox, Accounts(SRC / "never-written.json", {}))
 
 
-def test_a_read_is_seen_by_the_recording_gizmo():
-    """Proof the check above can fail: asking a tool does reach the gizmo."""
-    gizmo = _Recording()
-    asyncio.run(build_server(MessagesService(gizmo)).call_tool("messages_status", {}))
-    assert gizmo.asked == 1
+def test_listing_the_tools_asks_the_inbox_nothing():
+    """A start that waited on Synapse would cost no CPU, so it is refused here instead."""
+    inbox = _Recording()
+    assert sorted(t.name for t in asyncio.run(build_server(_service(inbox)).list_tools())) == sorted(TOOLS)
+    assert inbox.asked == 0
+
+
+def test_a_read_is_seen_by_the_recording_inbox():
+    """Proof the check above can fail: asking a tool does reach the inbox."""
+    inbox = _Recording()
+    asyncio.run(build_server(_service(inbox)).call_tool("messages_unread", {}))
+    assert inbox.asked == 1
 
 
 #: The only functions that may wait, each with its reason. None of them is on the way to a first answer.

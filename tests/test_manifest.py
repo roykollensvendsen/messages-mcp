@@ -7,6 +7,7 @@ version, copy it again.
 
 import json
 import pathlib
+import re
 import sys
 import tomllib
 
@@ -63,4 +64,18 @@ def test_the_manifest_names_the_config_folder_the_plugin_reads():
 def test_the_default_config_holds_made_up_values_only():
     text = (ROOT / _manifest()["config"]["default"]).read_text(encoding="utf-8")
     assert private_data_scan.offences(text, set()) == []
-    assert ".invalid" in text, "a made-up address ends in .invalid, so it can never reach a real host"
+    hosts = re.findall(r"https?://([^/:\"]+)", text)
+    assert hosts, "the default names the laptop's own Synapse"
+    for host in hosts:
+        assert host == "127.0.0.1" or host.endswith(".invalid"), f"{host}: only this laptop, or a made-up .invalid host"
+
+
+def test_the_template_s_gizmo_is_gone():
+    """Quality f1 on #1: nothing the owner installs or reads still speaks of the made-up gizmo."""
+    shipped = [
+        *sorted((ROOT / "src").rglob("*.py")),
+        ROOT / "config.default.toml",
+        ROOT / "README.md",
+        ROOT / "docs" / "setup.md",
+    ]
+    assert [path.name for path in shipped if "gizmo" in path.read_text(encoding="utf-8").lower()] == []

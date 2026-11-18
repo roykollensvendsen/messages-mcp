@@ -66,7 +66,7 @@ NEW_MODULE_CEILING = 15  # the most tangled function a new module may have
 BLOCK = 6  # lines in a row that count as a copied block
 EXCEPTION = re.compile(r"^\s*ratchet-exception:\s*([a-z_]+)", re.IGNORECASE | re.MULTILINE)
 TALLY = re.compile(r"(\d+)/(\d+) rules turned off")
-#: The layers, lowest first. The core asks the gizmo and words the answers, and knows no MCP;
+#: The layers, lowest first. The core reads the inbox and words the answers, and knows no MCP;
 #: only the top, the server and the command line, knows MCP and puts the core together.
 CORE = {
     "__init__",
@@ -85,6 +85,10 @@ CORE = {
     "door_cert",
     "bridge_config",
     "ntfy_config",
+    # What M4 adds: the Matrix reader, the plugin's own login, and the account labels.
+    "matrix",
+    "login",
+    "accounts",
 }
 TOP = {"server", "cli"}
 #: Which layers each layer may import from this package, and the outside packages it never may.

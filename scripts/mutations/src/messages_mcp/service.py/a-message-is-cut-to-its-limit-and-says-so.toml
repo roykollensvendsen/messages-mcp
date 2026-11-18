@@ -1,0 +1,5 @@
+[[rule]]
+name = "a message is cut to its limit and says so"
+file = "src/messages_mcp/service.py"
+find = 'if len\(text\) <= most:'
+replace = '    if True:'

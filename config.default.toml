@@ -1,15 +1,21 @@
 # messages-mcp's settings. `claude-voice plugins install` copies this file to
 # ~/.config/messages-mcp/config.toml the first time, and never over one that exists.
-# Made-up values only: nothing here names a real device, place or person.
+# Made-up values only: nothing here names a real person, chat or account.
 
-[device]
-# The gizmo's address on your network. The made-up default reaches nothing.
-address = "gizmo.example.invalid"
-# Answer from the made-up gizmo in fake.py instead of a real one.
-simulate = true
+[inbox]
+# Answer from the made-up chats in fake.py instead of the real inbox.
+simulate = false
+# The laptop's own Synapse, on loopback. The plugin reads it with its own login,
+# made once with `messages-mcp login`.
+homeserver = "http://127.0.0.1:8008"
 
 [door]
 # matrix-door's TLS certificate and key, as `tailscale cert` writes them. Empty means
 # door.crt and door.key in this folder.
 cert = ""
 key = ""
+
+[accounts]
+# Optional names for the bridged Messenger logins, said instead of "account 1" and
+# "account 2". Each line is the bridge's login ID = a short name, for example:
+# "the-login-id" = "private"

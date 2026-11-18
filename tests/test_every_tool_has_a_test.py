@@ -3,7 +3,8 @@
 import asyncio
 import pathlib
 
-from messages_mcp.fake import FakeGizmo
+from messages_mcp.accounts import Accounts
+from messages_mcp.fake import FakeInbox
 from messages_mcp.server import FIRST_LINE_MAX, TOOLS, build_server
 from messages_mcp.service import MessagesService
 
@@ -11,7 +12,8 @@ TESTS = pathlib.Path(__file__).parent
 
 
 def _tools():
-    return {tool.name: tool for tool in asyncio.run(build_server(MessagesService(FakeGizmo())).list_tools())}
+    service = MessagesService(FakeInbox(), Accounts(TESTS / "never-written.json", {}))
+    return {tool.name: tool for tool in asyncio.run(build_server(service).list_tools())}
 
 
 def test_every_tool_has_a_test_file_named_after_it():

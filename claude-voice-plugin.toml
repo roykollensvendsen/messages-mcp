@@ -4,7 +4,7 @@ manifest = 1
 name = "messages"
 command = "uv"
 args = ["run", "messages-mcp", "serve"]
-tools = ["messages_status"]
+tools = ["messages_unread", "messages_read", "messages_chats"]
 timeout = 30
 branch = "main"
 # Add "home" here when the plugin needs a position; it then reads home_file, never a copy.

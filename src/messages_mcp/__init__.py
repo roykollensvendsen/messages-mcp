@@ -1,1 +1,1 @@
-"""messages-mcp: messages read by voice through claude-voice (for now, the template's made-up gizmo)."""
+"""messages-mcp: Messenger messages, bridged into the laptop's own Matrix inbox, read by voice through claude-voice."""

@@ -5,24 +5,68 @@ import pytest
 from messages_mcp import cli
 
 
-def test_status_says_what_the_voice_would_hear(capsys):
-    assert cli.main(["status", "--simulate"]) == 0
-    assert capsys.readouterr().out == "Simulated: The gizmo is on, at level 40.\n"
+@pytest.mark.usefixtures("own_folders")
+def test_unread_says_what_the_voice_would_hear(capsys):
+    assert cli.main(["unread", "--simulate"]) == 0
+    said = capsys.readouterr().out
+    assert said.startswith("Simulated: 2 chats with new messages. Made-up Friend: 2 new; ")
 
 
-def test_with_no_real_gizmo_set_up_status_says_so(tmp_path, monkeypatch, capsys):
+@pytest.mark.usefixtures("own_folders")
+def test_with_no_login_unread_says_so(tmp_path, monkeypatch, capsys):
     config = tmp_path / "config.toml"
-    config.write_text("[device]\nsimulate = false\n")
+    config.write_text("[inbox]\nsimulate = false\n")
     monkeypatch.setenv("MESSAGES_MCP_CONFIG", str(config))
-    assert cli.main(["status"]) == 0
-    assert capsys.readouterr().out == "No real gizmo is set up yet, so nothing was asked.\n"
+    assert cli.main(["unread"]) == 0
+    assert capsys.readouterr().out == "messages-mcp isn't logged in to the inbox yet, so nothing was read.\n"
+
+
+@pytest.mark.usefixtures("own_folders")
+def test_a_simulated_read_numbers_its_made_up_logins_apart_from_the_real_ones(tmp_path):
+    cli.main(["unread", "--simulate"])
+    state = tmp_path / "state" / "messages-mcp"
+    assert (state / "accounts-simulated.json").exists()
+    assert not (state / "accounts.json").exists()
+
+
+@pytest.mark.usefixtures("own_folders")
+def test_login_asks_for_the_user_and_a_hidden_password_and_says_where_it_is_kept(monkeypatch, capsys):
+    asked = {}
+
+    async def log_in(homeserver, user, password, path):
+        asked.update(homeserver=homeserver, user=user, password=password, path=path)
+        return "MADEUPDEVICE"
+
+    monkeypatch.setattr("builtins.input", lambda _prompt: " @owner:made-up.example.invalid ")
+    monkeypatch.setattr(cli.getpass, "getpass", lambda _prompt: "made-up-password")
+    monkeypatch.setattr(cli.login, "log_in", log_in)
+    assert cli.main(["login"]) == 0
+    assert asked["user"] == "@owner:made-up.example.invalid"
+    assert asked["homeserver"] == "http://127.0.0.1:8008"
+    assert asked["path"].name == "matrix-login.json"
+    said = capsys.readouterr().out
+    assert "MADEUPDEVICE" in said
+    assert "made-up-password" not in said
+
+
+@pytest.mark.usefixtures("own_folders")
+def test_a_refused_login_says_why_and_fails(monkeypatch, capsys):
+    async def log_in(*_):
+        msg = "Synapse refused the login (made up)"
+        raise cli.login.LoginError(msg)
+
+    monkeypatch.setattr("builtins.input", lambda _prompt: "@owner:made-up.example.invalid")
+    monkeypatch.setattr(cli.getpass, "getpass", lambda _prompt: "made-up-wrong")
+    monkeypatch.setattr(cli.login, "log_in", log_in)
+    assert cli.main(["login"]) == 1
+    assert capsys.readouterr().err == "not logged in: Synapse refused the login (made up)\n"
 
 
 def test_a_broken_config_stops_the_command_with_the_fix(tmp_path, monkeypatch, capsys):
     config = tmp_path / "config.toml"
-    config.write_text("[device\n")
+    config.write_text("[inbox\n")
     monkeypatch.setenv("MESSAGES_MCP_CONFIG", str(config))
-    assert cli.main(["status"]) == 2
+    assert cli.main(["unread"]) == 2
     assert "delete it to use the defaults" in capsys.readouterr().err
 
 

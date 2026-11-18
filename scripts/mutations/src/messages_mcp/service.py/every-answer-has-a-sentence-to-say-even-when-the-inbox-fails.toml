@@ -1,0 +1,5 @@
+[[rule]]
+name = "every answer has a sentence to say even when the inbox fails"
+file = "src/messages_mcp/service.py"
+find = 'except Exception:  # noqa: BLE001'
+replace = '        except ZeroDivisionError:  # switched off'
