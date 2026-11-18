@@ -57,10 +57,8 @@ class Drafts:
     def write(self, receiver: str, room: str, name: str, text: str) -> tuple[Draft, bool]:
         """Create the draft to `room`, or change the one there is; and whether one was replaced."""
         now = self._clock()
+        self._sweep(now)
         old = next((d for d in self._by_token.values() if (d.receiver, d.room) == (receiver, room)), None)
-        if old is not None and self._expired(old, now):
-            del self._by_token[old.token]
-            old = None
         if old is None:
             draft = Draft(secrets.token_urlsafe(16), 1, receiver, room, name, text, now)
         else:
@@ -82,6 +80,11 @@ class Drafts:
             return STALE
         return draft
 
+    def _sweep(self, now: float) -> None:
+        """Drop every expired draft, to anyone, so none outlives its 15 minutes in memory."""
+        for token in [t for t, d in self._by_token.items() if self._expired(d, now)]:
+            del self._by_token[token]
+
     @staticmethod
     def _expired(draft: Draft, now: float) -> bool:
         # RULE: a draft expires fifteen minutes after its last change
@@ -92,12 +95,15 @@ def refused_text(text: str) -> str | None:
     """Why the voice may not send `text`, in words to say; None when it may (guard 3)."""
     if not text.strip():
         return "there is nothing to send"
+    # RULE: a text with a hidden character is refused
+    if any(not c.isprintable() and not c.isspace() for c in text):
+        return "it has a hidden character in it; send that from Element"
     # RULE: a text over a thousand characters is refused
     if len(text) > MOST:
         return f"it is over {MOST} characters; send that from Element"
     # RULE: a text with a link is refused
-    if LINK.search(text):
-        return "it has a link; send that from Element"
+    if link := LINK.search(text):
+        return f"“{link.group(0)}” looks like a link; send that from Element"
     # RULE: a text with a long run of digits is refused
     if DIGITS.search(text):
         return "it has a long run of digits; send that from Element"

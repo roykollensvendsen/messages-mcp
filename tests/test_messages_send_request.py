@@ -107,3 +107,24 @@ def test_drafting_is_not_offered_to_the_voice_yet(tmp_path):
     service = MessagesService(FakeInbox(), Accounts(tmp_path / "a.json", {}), now=lambda: NOW)
     tools = asyncio.run(build_server(service).list_tools())
     assert not [t.name for t in tools if "send" in t.name]
+
+
+def test_the_draft_holds_exactly_the_text_that_is_read_back(tmp_path):
+    """Quality f1 on #10: what is stored, and later sent, is what the owner heard."""
+    drafts = Drafts()
+    answer = _ask(
+        tmp_path, [_direct()], drafts=drafts, chat="Made-up Friend", text="Say “yes”\n  to   the made-up plan"
+    )
+    held = drafts.check(answer["token"], answer["version"])
+    assert held.text == "Say 'yes' to the made-up plan"
+    assert f"“{held.text}”." in answer["say"]
+
+
+def test_a_zero_width_character_is_refused_not_hidden(tmp_path):
+    drafts = Drafts()
+    answer = _ask(tmp_path, [_direct()], drafts=drafts, chat="Made-up Friend", text="Made-up\u200b text")
+    assert (answer["outcome"], answer["say"]) == (
+        "refused",
+        "Not drafted: it has a hidden character in it; send that from Element.",
+    )
+    assert drafts._by_token == {}
