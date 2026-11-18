@@ -68,7 +68,20 @@ EXCEPTION = re.compile(r"^\s*ratchet-exception:\s*([a-z_]+)", re.IGNORECASE | re
 TALLY = re.compile(r"(\d+)/(\d+) rules turned off")
 #: The layers, lowest first. The core asks the gizmo and words the answers, and knows no MCP;
 #: only the top, the server and the command line, knows MCP and puts the core together.
-CORE = {"__init__", "device", "fake", "service", "settings", "platform", "platform.base", "platform.linux"}
+CORE = {
+    "__init__",
+    "device",
+    "fake",
+    "service",
+    "settings",
+    "platform",
+    "platform.base",
+    "platform.linux",
+    # matrix-door, which knows no MCP: the local API client, the owner's list, and the door.
+    "localapi",
+    "door_list",
+    "door",
+}
 TOP = {"server", "cli"}
 #: Which layers each layer may import from this package, and the outside packages it never may.
 ALLOWED = {

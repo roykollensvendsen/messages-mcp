@@ -1,0 +1,5 @@
+[[rule]]
+name = "a refused connection is closed before any byte of it is read"
+file = "src/messages_mcp/door.py"
+find = 'if not verdict\.allowed:'
+replace = 'if False:'

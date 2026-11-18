@@ -54,8 +54,20 @@ Check: `systemd-analyze cat-config systemd/logind.conf` shows both lines.
 Why: who gets in is the owner's choice, and no tool or agent ever writes this list.
 
 Take the phone's and this laptop's IDs from `tailscale status --json`. They are the `ID` of
-`Self` and of the phone under `Peer`. Write them to `~/.config/messages-mcp/door.toml`, with
-only the owner able to read it. The file's exact form comes with matrix-door.
+`Self` and of the phone under `Peer`. Write them to `~/.config/messages-mcp/door.toml`, one
+table each, with only the owner able to read it. matrix-door refuses a list others can read.
+
+```
+[[device]]
+name = "phone"
+id = "<the phone's ID>"
+
+[[device]]
+name = "laptop"
+id = "<this laptop's ID>"
+```
+
+Then make it the owner's alone:
 
 ```
 chmod 600 ~/.config/messages-mcp/door.toml
@@ -63,10 +75,11 @@ chmod 600 ~/.config/messages-mcp/door.toml
 
 Check: `stat -c %a ~/.config/messages-mcp/door.toml` prints `600`.
 
-#### C. Install Synapse and ntfy
+#### C. Install Synapse and ntfy, and get the door's certificate
 
-Why: it installs packages on the owner's machine, with `sudo`. The operator setting also lets the
-owner's user drive Tailscale without `sudo`, which widens who can change it.
+Why: it installs packages and changes Tailscale on the owner's machine, with `sudo`. The
+operator setting also lets the owner's user drive Tailscale without `sudo`, which widens who
+can change it.
 
 Install both with the system's package manager, as each project's install docs say. If
 `tailscale cert` needs root for the owner's user, let it run without:
@@ -75,9 +88,18 @@ Install both with the system's package manager, as each project's install docs s
 sudo tailscale set --operator=$USER
 ```
 
-To undo it, run `sudo tailscale set --operator=`.
+To undo it, run `sudo tailscale set --operator=`. Then get the certificate matrix-door serves,
+for the laptop's own tailnet name:
 
-Check: `command -v ntfy` prints a path, and `tailscale cert --help` runs without `sudo`.
+```
+mkdir -p ~/.config/messages-mcp
+tailscale cert --cert-file ~/.config/messages-mcp/door.crt \
+  --key-file ~/.config/messages-mcp/door.key <laptop>.<tailnet>.ts.net
+chmod 600 ~/.config/messages-mcp/door.key
+```
+
+Check: `command -v ntfy` prints a path, and `stat -c %a ~/.config/messages-mcp/door.key` prints
+`600`.
 
 #### D. Create the Matrix user
 

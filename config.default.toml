@@ -7,3 +7,9 @@
 address = "gizmo.example.invalid"
 # Answer from the made-up gizmo in fake.py instead of a real one.
 simulate = true
+
+[door]
+# matrix-door's TLS certificate and key, as `tailscale cert` writes them. Empty means
+# door.crt and door.key in this folder.
+cert = ""
+key = ""

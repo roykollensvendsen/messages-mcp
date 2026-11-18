@@ -9,8 +9,16 @@ if TYPE_CHECKING:
 
 
 class Platform(Protocol):
-    """The folders a plugin keeps its files in."""
+    """The folders a plugin keeps its files in, and where the system's own services listen."""
 
     def config_home(self) -> pathlib.Path:
         """The folder that holds each program's own config folder."""
+        ...
+
+    def state_home(self) -> pathlib.Path:
+        """The folder that holds each program's own logs and other state."""
+        ...
+
+    def tailscaled_socket(self) -> pathlib.Path:
+        """Where tailscaled's local API listens."""
         ...

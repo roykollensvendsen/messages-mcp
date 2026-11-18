@@ -1,0 +1,5 @@
+[[rule]]
+name = "a device shared in from another tailnet is refused even when it is listed"
+file = "src/messages_mcp/door.py"
+find = 'if node\.get\("Sharer"\):'
+replace = 'if False:'

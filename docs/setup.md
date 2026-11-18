@@ -54,17 +54,22 @@ Check: it prints one sentence for the voice and exits with 0.
 
 ### 3. Put matrix-door in front of the inbox
 
-**Not built yet:** matrix-door comes with the build's door slice. Wait for owner steps A and B.
+Wait for owner steps A, B and C. Step C gives the door its certificate.
 
-matrix-door listens on the laptop's tailnet address, port 8448, and ntfy's port, with TLS. For
-each new connection it asks Tailscale which device it is, before it reads a byte. A device
-not on the owner's list, a tagged device and a device shared in from another tailnet are all
-refused. A missing or empty list lets nobody in. Each refusal is one line in
-`~/.local/state/messages-mcp/door.log`.
+matrix-door listens on the laptop's tailnet addresses, on port 8448 for Synapse and 2586 for
+ntfy, with TLS. For each new connection it asks Tailscale which device is calling, before it
+reads a byte. A device not on the owner's list, a tagged device and a device shared in from
+another tailnet are all refused. So is every call when Tailscale is slow or fails to answer.
+A missing or empty list lets nobody in. Each refusal is one line in
+`~/.local/state/messages-mcp/door.log`, kept for 30 days. It will not start while Tailscale
+Funnel is on for either port.
 
-<!-- not run: it starts a service on the host -->
+<!-- not run: it installs the command and starts a service -->
 ```
-tailscale cert <laptop>.<tailnet>.ts.net
+uv tool install --from . messages-mcp
+mkdir -p ~/.config/systemd/user
+cp systemd/matrix-door.service ~/.config/systemd/user/
+systemctl --user daemon-reload
 systemctl --user enable --now matrix-door.service
 ```
 
@@ -151,8 +156,20 @@ Check: `systemd-analyze cat-config systemd/logind.conf` shows both lines.
 Why: who gets in is the owner's choice, and no tool or agent ever writes this list.
 
 Take the phone's and this laptop's IDs from `tailscale status --json`. They are the `ID` of
-`Self` and of the phone under `Peer`. Write them to `~/.config/messages-mcp/door.toml`, with
-only the owner able to read it. The file's exact form comes with matrix-door.
+`Self` and of the phone under `Peer`. Write them to `~/.config/messages-mcp/door.toml`, one
+table each, with only the owner able to read it. matrix-door refuses a list others can read.
+
+```
+[[device]]
+name = "phone"
+id = "<the phone's ID>"
+
+[[device]]
+name = "laptop"
+id = "<this laptop's ID>"
+```
+
+Then make it the owner's alone:
 
 ```
 chmod 600 ~/.config/messages-mcp/door.toml
@@ -160,11 +177,12 @@ chmod 600 ~/.config/messages-mcp/door.toml
 
 Check: `stat -c %a ~/.config/messages-mcp/door.toml` prints `600`.
 
-### C. Install Synapse and ntfy
+### C. Install Synapse and ntfy, and get the door's certificate
 
 <!-- owner -->
-Why: it installs packages on the owner's machine, with `sudo`. The operator setting also lets the
-owner's user drive Tailscale without `sudo`, which widens who can change it.
+Why: it installs packages and changes Tailscale on the owner's machine, with `sudo`. The
+operator setting also lets the owner's user drive Tailscale without `sudo`, which widens who
+can change it.
 
 Install both with the system's package manager, as each project's install docs say. If
 `tailscale cert` needs root for the owner's user, let it run without:
@@ -173,9 +191,18 @@ Install both with the system's package manager, as each project's install docs s
 sudo tailscale set --operator=$USER
 ```
 
-To undo it, run `sudo tailscale set --operator=`.
+To undo it, run `sudo tailscale set --operator=`. Then get the certificate matrix-door serves,
+for the laptop's own tailnet name:
 
-Check: `command -v ntfy` prints a path, and `tailscale cert --help` runs without `sudo`.
+```
+mkdir -p ~/.config/messages-mcp
+tailscale cert --cert-file ~/.config/messages-mcp/door.crt \
+  --key-file ~/.config/messages-mcp/door.key <laptop>.<tailnet>.ts.net
+chmod 600 ~/.config/messages-mcp/door.key
+```
+
+Check: `command -v ntfy` prints a path, and `stat -c %a ~/.config/messages-mcp/door.key` prints
+`600`.
 
 ### D. Create the Matrix user
 

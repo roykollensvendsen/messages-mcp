@@ -30,6 +30,16 @@ class Settings:
 
     address: str = "gizmo.example.invalid"
     simulate: bool = True
+    #: matrix-door's TLS certificate and key, from `tailscale cert`; empty means the config folder's.
+    door_cert: str = ""
+    door_key: str = ""
+
+    def door_files(self) -> tuple[pathlib.Path, pathlib.Path]:
+        """The certificate and key matrix-door serves, with the config folder's as the default."""
+        folder = platform.current().config_home() / CONFIG_DIR
+        cert = pathlib.Path(self.door_cert).expanduser() if self.door_cert else folder / "door.crt"
+        key = pathlib.Path(self.door_key).expanduser() if self.door_key else folder / "door.key"
+        return cert, key
 
 
 def config_file() -> pathlib.Path:
@@ -49,8 +59,23 @@ def load(path: pathlib.Path | None = None) -> Settings:
         msg = f"{path} is not valid TOML ({broken}); fix it, or delete it to use the defaults"
         raise SettingsError(msg) from broken
     device = data.pop("device", {})
-    unknown = sorted(data) + sorted(f"device.{key}" for key in device if key not in ("address", "simulate"))
+    door = data.pop("door", {})
+    unknown = sorted(data) + _unknown("device", device) + _unknown("door", door)
     if unknown:
         msg = f"{path} has keys messages-mcp does not know: {', '.join(unknown)}; remove them or fix their spelling"
         raise SettingsError(msg)
-    return Settings(address=str(device.get("address", Settings.address)), simulate=bool(device.get("simulate", True)))
+    return Settings(
+        address=str(device.get("address", Settings.address)),
+        simulate=bool(device.get("simulate", True)),
+        door_cert=str(door.get("cert", "")),
+        door_key=str(door.get("key", "")),
+    )
+
+
+#: The keys each table of the config file may hold.
+KNOWN = {"device": ("address", "simulate"), "door": ("cert", "key")}
+
+
+def _unknown(table: str, keys: dict[str, object]) -> list[str]:
+    """The keys in `table` the plugin does not know, each named with its table."""
+    return sorted(f"{table}.{key}" for key in keys if key not in KNOWN[table])

@@ -1,0 +1,5 @@
+[[rule]]
+name = "the refusal log keeps a line for thirty days"
+file = "src/messages_mcp/door.py"
+find = 'return now - when <= dt\.timedelta\(days=KEEP_DAYS\)'
+replace = 'return True'

@@ -1,0 +1,5 @@
+[[rule]]
+name = "a device not on the list is refused"
+file = "src/messages_mcp/door.py"
+find = 'if stable_id not in listed:'
+replace = 'if False:'

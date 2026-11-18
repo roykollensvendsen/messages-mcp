@@ -1,0 +1,5 @@
+[[rule]]
+name = "a slow answer from tailscaled is a refusal"
+file = "src/messages_mcp/door.py"
+find = 'slow = isinstance\(failed\.__cause__, TimeoutError\)'
+replace = 'slow = False'

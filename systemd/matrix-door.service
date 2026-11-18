@@ -1,0 +1,20 @@
+# matrix-door as a systemd user unit: the only way into the Matrix inbox from the tailnet.
+# docs/setup.md, step 3, installs it. It runs as the owner, never as root.
+[Unit]
+Description=matrix-door: only the owner's listed devices reach the Matrix inbox
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=%h/.local/bin/messages-mcp door
+Restart=on-failure
+RestartSec=10
+# The refusal log is the only thing it writes, and only the owner can read what it writes.
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=%h/.local/state/messages-mcp
+
+[Install]
+WantedBy=default.target
