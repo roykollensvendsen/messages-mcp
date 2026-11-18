@@ -61,8 +61,10 @@ ntfy, with TLS. For each new connection it asks Tailscale which device is callin
 reads a byte. A device not on the owner's list, a tagged device and a device shared in from
 another tailnet are all refused. So is every call when Tailscale is slow or fails to answer.
 A missing or empty list lets nobody in. Each refusal is one line in
-`~/.local/state/messages-mcp/door.log`, kept for 30 days. It will not start while Tailscale
-Funnel is on for either port.
+`~/.local/state/messages-mcp/door.log`, kept for 30 days, and a caller that keeps trying gets
+one line a minute. The door will not run while Tailscale Funnel is on for either port, or while
+Tailscale serve passes Synapse or ntfy on past it. It asks again every minute, and stops if
+either turns on.
 
 <!-- not run: it installs the command and starts a service -->
 ```

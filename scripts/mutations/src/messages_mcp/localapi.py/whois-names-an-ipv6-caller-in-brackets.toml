@@ -1,0 +1,5 @@
+[[rule]]
+name = "whois names an IPv6 caller in brackets"
+file = "src/messages_mcp/localapi.py"
+find = 'where = f"\[\{ip\}\]:\{port\}" if'
+replace = 'where = f"{ip}:{port}"'

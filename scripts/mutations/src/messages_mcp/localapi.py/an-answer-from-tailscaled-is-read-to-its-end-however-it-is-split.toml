@@ -1,0 +1,5 @@
+[[rule]]
+name = "an answer from tailscaled is read to its end, however it is split"
+file = "src/messages_mcp/localapi.py"
+find = 'answer \+= chunk'
+replace = 'return chunk'

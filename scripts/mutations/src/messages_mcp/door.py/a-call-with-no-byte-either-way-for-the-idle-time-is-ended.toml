@@ -1,0 +1,5 @@
+[[rule]]
+name = "a call with no byte either way for the idle time is ended"
+file = "src/messages_mcp/door.py"
+find = 'if not both\.done\(\) and loop\.time\(\) - heard\[0\] >= self\.idle:'
+replace = 'if False:'

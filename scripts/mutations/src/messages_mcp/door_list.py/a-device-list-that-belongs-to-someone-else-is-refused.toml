@@ -1,0 +1,5 @@
+[[rule]]
+name = "a device list that belongs to someone else is refused"
+file = "src/messages_mcp/door_list.py"
+find = 'if found\.st_uid != os\.getuid\(\):'
+replace = 'if False:'

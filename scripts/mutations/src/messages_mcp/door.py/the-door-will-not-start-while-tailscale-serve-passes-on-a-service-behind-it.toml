@@ -1,0 +1,5 @@
+[[rule]]
+name = "the door will not start while Tailscale serve passes on a service behind it"
+file = "src/messages_mcp/door.py"
+find = 'if passed & services:'
+replace = 'if False:'

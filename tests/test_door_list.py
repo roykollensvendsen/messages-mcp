@@ -40,7 +40,31 @@ def test_a_list_that_is_not_a_list_of_devices_is_refused_with_the_fix(tmp_path, 
         door_list.allowed(_written(tmp_path, text))
 
 
-def test_a_link_to_a_list_that_is_gone_is_refused(tmp_path):
-    (tmp_path / "door.toml").symlink_to(tmp_path / "gone.toml")
-    with pytest.raises(door_list.DoorListError):
-        door_list.allowed(tmp_path / "door.toml")
+def test_a_device_list_that_is_a_link_is_refused(tmp_path):
+    """A link could point the door at a list someone else keeps; a link to a list that is gone too."""
+    real = _written(tmp_path, LIST)
+    (tmp_path / "linked.toml").symlink_to(real)
+    with pytest.raises(door_list.DoorListError, match="is a link"):
+        door_list.allowed(tmp_path / "linked.toml")
+    (tmp_path / "dangling.toml").symlink_to(tmp_path / "gone.toml")
+    with pytest.raises(door_list.DoorListError, match="is a link"):
+        door_list.allowed(tmp_path / "dangling.toml")
+
+
+def test_a_device_list_that_belongs_to_someone_else_is_refused(tmp_path, monkeypatch):
+    path = _written(tmp_path, LIST)
+    monkeypatch.setattr(door_list.os, "getuid", lambda: path.stat().st_uid + 1)
+    with pytest.raises(door_list.DoorListError, match="belongs to someone else"):
+        door_list.allowed(path)
+
+
+def test_a_list_whose_folder_cannot_be_opened_is_refused(tmp_path):
+    folder = tmp_path / "shut"
+    folder.mkdir()
+    _written(folder, LIST)
+    folder.chmod(0)
+    try:
+        with pytest.raises(door_list.DoorListError, match="cannot be read"):
+            door_list.allowed(folder / "door.toml")
+    finally:
+        folder.chmod(0o700)

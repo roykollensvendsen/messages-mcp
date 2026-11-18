@@ -11,6 +11,7 @@ import json
 import socket
 import ssl
 import struct
+import urllib.parse
 
 import pytest
 from bounded import run_bounded
@@ -20,6 +21,7 @@ from messages_mcp.localapi import LocalAPI, LocalAPIError
 
 PHONE = {"StableID": "nFAKE0PHONE0CNTRL", "ComputedName": "made-up-phone", "Name": "made-up-phone.example."}
 LIST = '[[device]]\nname = "phone"\nid = "nFAKE0PHONE0CNTRL"\n'
+REQUEST = b"GET /_matrix/client/versions HTTP/1.0\r\n\r\n"
 #: Every wait in a test is bounded, so a door that hangs fails the test instead.
 WITHIN = 30
 
@@ -76,7 +78,7 @@ def _list(place, text=LIST, mode=0o600):
     return lambda: door_list.allowed(path)
 
 
-async def _scenario(place, answers, allow, *, send=b"GET /_matrix/client/versions HTTP/1.0\r\n\r\n", ask=None):
+async def _scenario(place, answers, allow, *, ask=None, host="127.0.0.1", send=REQUEST):  # noqa: PLR0913
     """One caller, through the door: what the caller got back, what the service got, and the log.
 
     `ask`, when given, stands in for tailscaled and is also handed the door's side of the socket.
@@ -93,11 +95,11 @@ async def _scenario(place, answers, allow, *, send=b"GET /_matrix/client/version
         return await ask(accepted, ip, port)
 
     gate = door.Door(asking if ask else api.whois, allow, log, tls=None)
-    listener = gate.listen("127.0.0.1", 0)
+    listener = gate.listen(host, 0)
     loop = asyncio.get_running_loop()
     try:
         async with asyncio.timeout(WITHIN):
-            reader, writer = await asyncio.open_connection(*listener.getsockname())
+            reader, writer = await asyncio.open_connection(*listener.getsockname()[:2])
             writer.write(send)
             await writer.drain()
             accepted, _ = await loop.sock_accept(listener)
@@ -125,7 +127,9 @@ def test_a_listed_device_is_passed_to_the_service_behind_the_door(place):
     assert got.startswith(b"GET /_matrix/client/versions")
     assert back.startswith(b"synapse: GET")
     assert lines == []
-    assert asked == ["/localapi/v0/whois?addr=127.0.0.1:" + asked[0].rsplit(":", 1)[1]]
+    (only,) = asked
+    assert urllib.parse.urlsplit(only).path == "/localapi/v0/whois"
+    assert urllib.parse.parse_qs(urllib.parse.urlsplit(only).query)["addr"][0].startswith("127.0.0.1:")
 
 
 def test_a_device_not_on_the_list_is_refused(place):
@@ -310,16 +314,22 @@ def test_a_listed_device_gets_in_over_tls(place):
 
 
 class StubAPI:
-    """The local API's start-up questions, answered from the test."""
+    """The local API's start-up and watch questions, answered from the test, one answer per ask.
 
-    def __init__(self, funnel=(), hosts=("127.0.0.1",), *, broken=False):
-        self.funnel, self.hosts, self.broken = set(funnel), list(hosts), broken
+    `exposures` is what each ask of serve-config says, as (Funnel's ports, the ports serve passes
+    on); the last one repeats. `broken` makes every ask fail.
+    """
 
-    async def funnel_ports(self):
+    def __init__(self, exposures=((set(), set()),), hosts=("127.0.0.1",), *, broken=False):
+        self.exposures, self.hosts, self.broken = list(exposures), list(hosts), broken
+        self.asked = 0
+
+    async def exposure(self):
         if self.broken:
             msg = "no answer"
             raise LocalAPIError(msg)
-        return self.funnel
+        self.asked += 1
+        return self.exposures[min(self.asked, len(self.exposures)) - 1]
 
     async def own_addresses(self):
         return self.hosts
@@ -342,39 +352,71 @@ def _no_real_ports(monkeypatch, listened):
     monkeypatch.setattr(door.Door, "listen", listen)
 
 
+def _started(tmp_path, api, every=60.0):
+    """Start the door against `api`, bounded: a door that started anyway would serve until stopped."""
+    started = door.start(api, frozenset, door.RefusalLog(tmp_path / "log"), None, every=every)
+    asyncio.run(asyncio.wait_for(started, 5))
+
+
 def test_the_door_will_not_start_while_funnel_opens_one_of_its_ports(tmp_path, monkeypatch):
     _no_real_ports(monkeypatch, [])
-    started = door.start(StubAPI(funnel={8448, 443}), frozenset, door.RefusalLog(tmp_path / "log"), None)
     with pytest.raises(door.DoorError, match="Funnel opens port 8448"):
-        # Bounded: a door that started anyway would serve until stopped.
-        asyncio.run(asyncio.wait_for(started, 5))
+        _started(tmp_path, StubAPI([({8448, 443}, set())]))
 
 
-def test_the_door_will_not_start_when_it_cannot_tell_whether_funnel_is_on(tmp_path):
+def test_the_door_will_not_start_while_tailscale_serve_passes_on_a_service_behind_it(tmp_path, monkeypatch):
+    """A serve proxy to Synapse or ntfy would let the whole tailnet round the door."""
+    _no_real_ports(monkeypatch, [])
+    with pytest.raises(door.DoorError, match="serve passes port 8008 past the door"):
+        _started(tmp_path, StubAPI([(set(), {8008, 3000})]))
+
+
+def test_a_running_door_stops_when_a_way_round_it_opens(tmp_path, monkeypatch):
+    listened = []
+    _no_real_ports(monkeypatch, listened)
+    api = StubAPI([(set(), set()), (set(), set()), (set(), {2586})])
+    with pytest.raises(door.DoorError, match="serve passes port 2586"):
+        _started(tmp_path, api, every=0.05)
+    assert len(listened) == 2, "it ran before it stopped"
+    assert api.asked == 3
+
+
+def test_the_door_will_not_start_when_it_cannot_tell_whether_a_way_round_it_is_open(tmp_path):
+    with pytest.raises(door.DoorError, match="cannot tell"):
+        _started(tmp_path, StubAPI(broken=True))
+
+
+def test_the_door_will_not_start_with_no_tailnet_address(tmp_path):
+    class NoAddress(StubAPI):
+        async def own_addresses(self):
+            msg = "no address"
+            raise LocalAPIError(msg)
+
     with pytest.raises(door.DoorError, match="cannot start"):
-        asyncio.run(door.start(StubAPI(broken=True), frozenset, door.RefusalLog(tmp_path / "log"), None))
+        _started(tmp_path, NoAddress())
 
 
-def test_with_funnel_off_the_door_listens_on_every_route(tmp_path, monkeypatch):
+def test_with_no_way_round_it_the_door_listens_on_every_route(tmp_path, monkeypatch):
     listened = []
     _no_real_ports(monkeypatch, listened)
 
     async def scenario():
-        started = asyncio.create_task(
-            door.start(StubAPI(funnel={443}), frozenset, door.RefusalLog(tmp_path / "l"), None)
-        )
-        await asyncio.sleep(0.2)
-        started.cancel()
+        api = StubAPI([({443}, {3000})])
+        running = asyncio.create_task(door.start(api, frozenset, door.RefusalLog(tmp_path / "l"), None, every=0.05))
+        await asyncio.sleep(0.3)
+        running.cancel()
         with pytest.raises(asyncio.CancelledError):
-            await started
+            await running
+        return api.asked
 
-    asyncio.run(scenario())
+    assert asyncio.run(scenario()) > 2, "it kept asking while it ran"
     assert listened == [("127.0.0.1", 8448), ("127.0.0.1", 2586)]
 
 
 def test_the_routes_are_synapses_and_ntfys():
     assert (door.Route(8448, 8008), door.Route(2586, 2586)) == door.ROUTES
     assert door.WHOIS_TIMEOUT == 2.0
+    assert door.CHECK_EVERY == 60.0
     assert door_list.FILE == "door.toml"
 
 
@@ -464,3 +506,72 @@ def test_a_caller_that_resets_ends_its_call_quietly(place):
 
     answer, got = asyncio.run(_through_a_listed_door(place, resetting))
     assert (answer, got) == (b"reset", b"hello")
+
+
+def test_a_listed_device_calling_over_ipv6_gets_in(place):
+    """The door listens on the laptop's IPv6 tailnet address too, and asks about the caller there."""
+    back, got, lines, asked = _run(place, {"/localapi/v0/whois": (200, {"Node": PHONE})}, _list(place), host="::1")
+    assert got.startswith(b"GET /_matrix/client/versions")
+    assert back.startswith(b"synapse: GET")
+    assert lines == []
+    (addr,) = urllib.parse.parse_qs(urllib.parse.urlsplit(asked[0]).query)["addr"]
+    assert addr.startswith("[::1]:")
+
+
+def test_a_caller_that_keeps_knocking_gets_one_line_a_minute(tmp_path):
+    """A looping device is counted, not written each time, so it can neither flood the log nor the disk."""
+    clock = [dt.datetime(2026, 11, 18, 12, tzinfo=dt.UTC)]
+    log = door.RefusalLog(tmp_path / "door.log", now=lambda: clock[0])
+    knocking = door.Verdict(
+        allowed=False, reason="not on the list", name="made-up-laptop", stable_id="nFAKE0OTHER0CNTRL"
+    )
+    other = door.Verdict(allowed=False, reason="whois failed")
+    for _ in range(50):
+        log.write(knocking)
+        clock[0] += dt.timedelta(seconds=1)
+    log.write(other)
+    clock[0] += dt.timedelta(seconds=60)
+    log.write(knocking)
+    reasons = [line.split("\t")[3] for line in log.path.read_text().splitlines()]
+    assert reasons == ["not on the list", "whois failed", "not on the list (49 more before this)"]
+
+
+def test_the_refusal_log_keeps_only_its_newest_lines(tmp_path, monkeypatch):
+    monkeypatch.setattr(door, "KEEP_LINES", 3)
+    clock = [dt.datetime(2026, 11, 18, 12, tzinfo=dt.UTC)]
+    log = door.RefusalLog(tmp_path / "door.log", now=lambda: clock[0])
+    for i in range(5):
+        log.write(door.Verdict(allowed=False, reason="not on the list", stable_id=f"nFAKE{i}CNTRL"))
+    assert [line.split("\t")[2] for line in log.path.read_text().splitlines()] == [f"nFAKE{i}CNTRL" for i in (2, 3, 4)]
+
+
+def test_a_call_with_no_byte_either_way_for_the_idle_time_is_ended(place):
+    async def scenario():
+        api = FakeTailscaled({"/localapi/v0/whois": (200, {"Node": PHONE})})
+        unix = await asyncio.start_unix_server(api.handle, "api.sock")
+        synapse = Upstream(b"synapse")
+        up = await asyncio.start_server(synapse.handle, "127.0.0.1", 0)
+        gate = door.Door(LocalAPI("api.sock", 1).whois, _list(place), door.RefusalLog(place / "log"), None, idle=0.3)
+        listener = gate.listen("127.0.0.1", 0)
+        serving = asyncio.create_task(gate.serve([(listener, up.sockets[0].getsockname()[1])]))
+        loop = asyncio.get_running_loop()
+        try:
+            async with asyncio.timeout(WITHIN):
+                reader, writer = await asyncio.open_connection(*listener.getsockname())
+                writer.write(b"hello")
+                first = await reader.read(1024)
+                began = loop.time()
+                last = await reader.read(1024)
+                took = loop.time() - began
+                writer.close()
+        finally:
+            serving.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await serving
+            unix.close()
+            up.close()
+        return first, last, took
+
+    first, last, took = asyncio.run(scenario())
+    assert (first, last) == (b"synapse: hello", b"")
+    assert 0.2 < took < 5, took

@@ -129,12 +129,39 @@ def test_a_read_is_seen_by_the_recording_gizmo():
     assert gizmo.asked == 1
 
 
+#: The only functions that may wait, each with its reason. None of them is on the way to a first answer.
+MAY_SLEEP = {
+    # matrix-door's watch waits a minute between asking whether Funnel or serve opened a way
+    # round it. It runs beside a door that is already listening, never before it.
+    ("door.py", "_watch"),
+}
+
+
 def test_no_code_sleeps():
     """A sleep costs no CPU either, so none may hide in the start."""
-    sleeps = [
-        f"{path.name}:{node.lineno}"
-        for path in sorted(SRC.rglob("*.py"))
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
-        if isinstance(node, ast.Attribute) and node.attr == "sleep"
-    ]
+    sleeps = []
+    for path in sorted(SRC.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        allowed = {
+            id(inner)
+            for fn in ast.walk(tree)
+            if isinstance(fn, ast.FunctionDef | ast.AsyncFunctionDef) and (path.name, fn.name) in MAY_SLEEP
+            for inner in ast.walk(fn)
+        }
+        sleeps += [
+            f"{path.name}:{node.lineno}"
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Attribute) and node.attr == "sleep" and id(node) not in allowed
+        ]
     assert sleeps == []
+
+
+def test_each_function_that_may_sleep_still_exists():
+    """A stale allowance would let the next sleep put there pass unseen."""
+    defined = {
+        (path.name, fn.name)
+        for path in sorted(SRC.rglob("*.py"))
+        for fn in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+        if isinstance(fn, ast.FunctionDef | ast.AsyncFunctionDef)
+    }
+    assert defined >= MAY_SLEEP
