@@ -35,7 +35,7 @@ def text(sender, body, ts, msgtype="m.text"):
     return {"sender": sender, "body": body, "ts": ts, "msgtype": msgtype}
 
 
-def portal(name, receiver, messages, *, members=None, protocol="facebook", encrypted=(), sent_by=BOT):  # noqa: PLR0913 - a room's own parts
+def portal(name, receiver, messages, *, members=None, protocol="facebook", encrypted=(), sent_by=BOT, room_type=None):  # noqa: PLR0913 - a room's own parts
     """A bridged Messenger room, with its `m.bridge` state and `messages` as text events."""
     bridge = {
         "bridgebot": sent_by,
@@ -44,6 +44,8 @@ def portal(name, receiver, messages, *, members=None, protocol="facebook", encry
     }
     if not receiver:
         del bridge["channel"]["fi.mau.receiver"]
+    if room_type is not None:
+        bridge["com.beeper.room_type"] = room_type
     state = [
         _event("m.bridge", bridge, key="made-up-bridge-id", sender=sent_by),
         _event("m.room.name", {"name": name}, key=""),

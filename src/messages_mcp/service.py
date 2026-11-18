@@ -16,6 +16,7 @@ import datetime as dt
 from typing import TYPE_CHECKING, Any
 
 from messages_mcp.device import NotSetUpError, UnreachableError
+from messages_mcp.drafts import Drafts, refused_text
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -77,11 +78,18 @@ def _spoken(message: Message, most: int) -> tuple[str, bool]:
 class MessagesService:
     """What the tools ask, answered from one inbox."""
 
-    def __init__(self, inbox: Inbox, accounts: Accounts, now: Callable[[], dt.datetime] | None = None) -> None:
+    def __init__(
+        self,
+        inbox: Inbox,
+        accounts: Accounts,
+        now: Callable[[], dt.datetime] | None = None,
+        drafts: Drafts | None = None,
+    ) -> None:
         """Answer from `inbox`, the fake or the Matrix one, labelling logins with `accounts`."""
         self._inbox = inbox
         self._accounts = accounts
         self._now = now or (lambda: dt.datetime.now(dt.UTC))
+        self._drafts = drafts or Drafts()
 
     async def _read(self, account: str | None) -> Read | dict[str, Any]:
         """The chats of `account`, or every chat, with their labels; or the failed answer instead."""
@@ -132,6 +140,50 @@ class MessagesService:
         active = sorted((c for c in chats if _newest(c) >= since), key=_newest, reverse=True)
         items = [_chat_item(c, labels[c.receiver]) for c in active]
         return _answered("chats", _chats_say(active), news, chats=items)
+
+    async def send_request(self, chat: str, text: str, account: str | None = None) -> dict[str, Any]:
+        """Create or change the draft to one chat and read it back; nothing is sent (messages-v1 §8)."""
+        read = await self._read(account)
+        if isinstance(read, dict):
+            return read
+        chats, labels, news = read
+        found = _find(chat, chats)
+        if isinstance(found, str):
+            return _failed("not_found", found)
+        refused = _refused_recipient(found) or _refused_words(text)
+        if refused:
+            return _failed("refused", refused)
+        draft, replaced = self._drafts.write(found.receiver, found.room, found.name, text)
+        say = _draft_say(found.name, labels[found.receiver], text, replaced=replaced)
+        return _answered("draft", say, news, chat=found.name, token=draft.token, version=draft.version)
+
+
+def _refused_recipient(chat: Chat) -> str | None:
+    """Why the voice may not write to `chat`, in words to say; None when it may (guard 2)."""
+    # RULE: a group chat is refused
+    if not chat.direct:
+        return f"“{chat.name}” is a group chat; the voice writes only to one person. Send that from Element."
+    # RULE: a chat the owner never wrote in is refused
+    if not chat.owner_wrote:
+        return (
+            f"You haven't written to “{chat.name}” before; the voice writes only where you have. "
+            "Send that from Element."
+        )
+    return None
+
+
+def _refused_words(text: str) -> str | None:
+    why = refused_text(text)
+    return f"Not drafted: {why}." if why else None
+
+
+def _draft_say(name: str, label: str | None, text: str, *, replaced: bool) -> str:
+    """The read-back of a draft, quoted so nothing in it can close the quote."""
+    shown = clean(text)
+    stop = "" if shown.endswith((".", "!", "?")) else "."
+    where = f", from {label}" if label else ""
+    before = f"This replaces the draft to “{name}”. " if replaced else ""
+    return f"{before}Draft to “{name}”{where}: “{shown}”{stop} Nothing is sent yet."
 
 
 #: What a read of the inbox gives: the chats asked for, every login's label, and any news.

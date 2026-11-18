@@ -1,0 +1,5 @@
+[[rule]]
+name = "each change to a draft gives a new version"
+file = "src/messages_mcp/drafts.py"
+find = 'version=old\.version \+ 1'
+replace = '            draft = replace(old, version=old.version, name=name, text=text, changed=now)'

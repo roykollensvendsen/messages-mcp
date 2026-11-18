@@ -1,0 +1,5 @@
+[[rule]]
+name = "a chat the owner never wrote in is refused"
+file = "src/messages_mcp/service.py"
+find = 'if not chat\.owner_wrote:'
+replace = '    if False:'

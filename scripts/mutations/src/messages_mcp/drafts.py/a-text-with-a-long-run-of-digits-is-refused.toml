@@ -1,0 +1,5 @@
+[[rule]]
+name = "a text with a long run of digits is refused"
+file = "src/messages_mcp/drafts.py"
+find = 'if DIGITS\.search\(text\):'
+replace = '    if False:'

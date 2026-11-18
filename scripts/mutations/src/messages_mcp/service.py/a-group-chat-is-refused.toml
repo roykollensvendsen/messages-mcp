@@ -1,0 +1,5 @@
+[[rule]]
+name = "a group chat is refused"
+file = "src/messages_mcp/service.py"
+find = 'if not chat\.direct:'
+replace = '    if False:'

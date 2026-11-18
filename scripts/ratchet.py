@@ -89,6 +89,8 @@ CORE = {
     "matrix",
     "login",
     "accounts",
+    # What M8 adds: drafts in memory, and what a voice-written text may hold.
+    "drafts",
 }
 TOP = {"server", "cli"}
 #: Which layers each layer may import from this package, and the outside packages it never may.

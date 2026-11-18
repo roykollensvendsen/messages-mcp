@@ -1,0 +1,5 @@
+[[rule]]
+name = "a draft expires fifteen minutes after its last change"
+file = "src/messages_mcp/drafts.py"
+find = 'return now - draft\.changed > EXPIRY'
+replace = '        return False'
