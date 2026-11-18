@@ -9,25 +9,133 @@ It is being built in slices. For now it holds only the template's walking skelet
 It started from claude-voice's plugin template. The guide for writing one is
 `docs/write-a-plugin.md` in claude-voice, and `docs/plugin-standard.md` there holds the rules.
 
-## Try it
+## What you need first
 
-<!-- not run: it needs the project installed, which `just setup` does -->
+Linux with systemd user units, Tailscale, uv, Python 3.12 or newer, and claude-voice. Five
+services run beside the plugin: matrix-door, Synapse, Element, ntfy and mautrix-meta.
+
+## Setting it up
+
+The setup guide, [docs/setup.md](docs/setup.md), is written so an agent can follow it alone.
+Every step there has a check. Some steps only the owner can do, and they are listed in full here.
+
+<!-- steps:begin -->
+<!-- Made by scripts/docs.py from docs/setup.md. Change the guide, then run it. -->
+
+The steps, in full, are in [docs/setup.md](docs/setup.md):
+
+1. Install the project
+2. Hear the plugin answer from its made-up device
+3. Put matrix-door in front of the inbox
+4. Set up Synapse behind the door
+5. Start ntfy behind the door
+6. Bridge Messenger with mautrix-meta
+7. Add the plugin to claude-voice
+
+### Steps only the owner can do
+
+#### A. Keep the laptop awake with its lid closed
+
+Why: these are system files, which need `sudo` on the owner's machine.
+
+Put these lines in `/etc/systemd/logind.conf.d/lid.conf`, then restart logind:
+
 ```
-just setup
-uv run messages-mcp status --simulate
+[Login]
+HandleLidSwitch=ignore
+HandleLidSwitchExternalPower=ignore
 ```
 
-The second line prints what the voice would hear, from the made-up gizmo in `fake.py`.
+Check: `systemd-analyze cat-config systemd/logind.conf` shows both lines.
 
-## Install it in claude-voice
+#### B. List the devices that may reach the inbox
 
-<!-- not run: it changes the owner's own bridge config, and asks in a terminal -->
+Why: who gets in is the owner's choice, and no tool or agent ever writes this list.
+
+Take the phone's and this laptop's IDs from `tailscale status --json`. They are the `ID` of
+`Self` and of the phone under `Peer`. Write them to `~/.config/messages-mcp/door.toml`, with
+only the owner able to read it. The file's exact form comes with matrix-door.
+
 ```
-claude-voice plugins install messages --from <this folder>
+chmod 600 ~/.config/messages-mcp/door.toml
 ```
 
-It reads `claude-voice-plugin.toml`, writes `config.default.toml` as your first config, and
-ends with the usual typed-name approval.
+Check: `stat -c %a ~/.config/messages-mcp/door.toml` prints `600`.
+
+#### C. Install Synapse and ntfy
+
+Why: it installs packages on the owner's machine, with `sudo`.
+
+Install both with the system's package manager, as each project's install docs say. If
+`tailscale cert` needs root for the owner's user, let it run without:
+
+```
+sudo tailscale set --operator=$USER
+```
+
+Check: `command -v ntfy` prints a path, and `tailscale cert --help` runs without `sudo`.
+
+#### D. Create the Matrix user
+
+Why: the password is the owner's, and only the owner types it.
+
+```
+register_new_matrix_user -c ~/.local/share/synapse/homeserver.yaml http://127.0.0.1:8008
+```
+
+Check: the owner can log in with it in step E.
+
+#### E. Log in to Element on the laptop and the phone
+
+Why: it is a login, and the recovery key is a secret only the owner keeps.
+
+Log in on both, verify each against the other, and keep the recovery key somewhere safe.
+
+Check: in Element's sessions list, both sessions show as verified.
+
+#### F. Try the door from a device that is not on the list
+
+Why: only the owner can reach the other devices on the tailnet.
+
+From another laptop on the tailnet, try the inbox:
+
+```
+curl -sS https://<laptop>.<tailnet>.ts.net:8448/_matrix/client/versions
+```
+
+Check: the connection is refused, and `~/.local/state/messages-mcp/door.log` has a new line.
+
+#### G. Paste the tailnet rule, and give the phone its push token
+
+Why: the rule is a policy in the owner's own Tailscale account, and the token is a secret.
+
+Paste the prepared rule into the Tailscale admin page. It gives only the phone and the laptop
+port 8448 and ntfy's port. Install the ntfy app on the phone, and give it its token.
+
+Check: the ntfy app shows its topic as connected.
+
+#### H. Log in to Messenger through the bridge
+
+Why: it is a login to the owner's own account, with Messenger's encryption PIN.
+
+Install mautrix-meta from its release page, then log in to account 1 in a plain terminal.
+Account 2 follows a week later, if account 1 had no lock.
+
+Check: the bridge's management room in Element says the account is logged in.
+
+#### I. Approve the plugin
+
+Why: claude-voice runs a new plugin only once its owner has typed its name.
+
+Do this only once the voice's private mark and its denies are in claude-voice.
+
+```
+claude-voice plugins approve messages-mcp
+```
+
+Check: `claude-voice plugins list` shows `messages` as approved.
+
+<!-- steps:end -->
 
 ## What is where
 
@@ -41,6 +149,7 @@ ends with the usual typed-name approval.
 | `src/messages_mcp/platform/` | The one place that knows the operating system. |
 | `scripts/ratchet.py` | The quality levels, which may never get worse than main's. |
 | `scripts/mutate.py` | Switches each rule off in turn, to prove its test can fail. |
+| `scripts/docs.py` | Makes this page's step list from `docs/setup.md`. |
 
 ## The checks
 
