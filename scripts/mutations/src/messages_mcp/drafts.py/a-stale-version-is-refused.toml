@@ -1,0 +1,5 @@
+[[rule]]
+name = "a stale version is refused"
+file = "src/messages_mcp/drafts.py"
+find = 'if version != draft\.version:'
+replace = '        if False:'

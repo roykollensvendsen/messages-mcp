@@ -41,6 +41,8 @@ PROTOCOL = "facebook"
 BOT_USERNAME = "facebookbot"
 BRIDGE = "m.bridge"
 RECEIVER = "fi.mau.receiver"
+#: Where bridgev2 marks a portal as a one-to-one chat ("dm"); a group has none.
+ROOM_TYPE = "com.beeper.room_type"
 #: How many of each room's newest events one sync brings; a read shows at most 10 of them.
 TIMELINE = 20
 #: The one request made: no presence, no account data, the newest events of each room.
@@ -100,7 +102,7 @@ class MatrixInbox:
                 msg = "the inbox did not answer"
                 raise UnreachableError(msg) from failed
         rooms: dict[str, Any] = (synced or {}).get("rooms", {}).get("join", {})
-        chats = [chat for room in rooms.values() if (chat := _chat(room, owner, bot)) is not None]
+        chats = [chat for key, room in rooms.items() if (chat := _chat(key, room, owner, bot)) is not None]
         log.info("read %d bridged chats of %d rooms in %.2f s", len(chats), len(rooms), time.monotonic() - started)
         return chats
 
@@ -143,7 +145,7 @@ def _events(room: dict[str, Any], part: str) -> list[dict[str, Any]]:
     return [e for e in events if isinstance(e, dict)]
 
 
-def _chat(room: dict[str, Any], owner: str, bot: str) -> Chat | None:
+def _chat(key: str, room: dict[str, Any], owner: str, bot: str) -> Chat | None:
     """The chat in one synced room, or None when it is not a Messenger portal."""
     timeline = _events(room, "timeline")
     events = [*_events(room, "state"), *timeline]
@@ -162,7 +164,16 @@ def _chat(room: dict[str, Any], owner: str, bot: str) -> Chat | None:
         unread=unread,
         last_at=messages[-1].at if messages else None,
         messages=messages,
+        room=key,
+        # RULE: only a room the bridge marks as a dm is one to one
+        direct=bridge.get(ROOM_TYPE) == "dm",
+        owner_wrote=_wrote(messages),
     )
+
+
+def _wrote(messages: tuple[Message, ...]) -> bool:
+    """Whether the owner wrote any of `messages`."""
+    return any(m.own for m in messages)
 
 
 def _state(events: list[dict[str, Any]]) -> dict[tuple[str, str], dict[str, Any]]:

@@ -1,0 +1,5 @@
+[[rule]]
+name = "a text over a thousand characters is refused"
+file = "src/messages_mcp/drafts.py"
+find = 'if len\(text\) > MOST:'
+replace = '    if False:'

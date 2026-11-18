@@ -51,6 +51,12 @@ class Chat:
     unread: int
     last_at: dt.datetime | None
     messages: tuple[Message, ...] = field(default_factory=tuple)
+    #: The room a reply would go to; private, so it never leaves the plugin.
+    room: str = ""
+    #: A one-to-one chat, as the bridge marks it; a group is never written to by voice.
+    direct: bool = False
+    #: The owner has written in this chat before, in the history the inbox gave.
+    owner_wrote: bool = False
 
 
 class Inbox(Protocol):

@@ -208,3 +208,29 @@ def test_a_login_that_names_no_user_is_no_login(tmp_path):
     path.write_text(json.dumps({"homeserver": "http://127.0.0.1:9", "access_token": PLUGIN_TOKEN}))
     with pytest.raises(NotSetUpError, match="names no Matrix user"):
         asyncio.run(MatrixInbox(path).chats())
+
+
+def test_a_reply_goes_to_the_room_the_chat_came_from(tmp_path):
+    [found] = _read(tmp_path, {"!friend:made-up": ROOMS["!friend:made-up"]})[0]
+    assert found.room == "!friend:made-up"
+
+
+def test_only_a_room_the_bridge_marks_as_a_dm_is_one_to_one(tmp_path):
+    rooms = {
+        "!dm:made-up": portal("Made-up Friend", "made-up-login-1", [text(FRIEND, "Made-up", 1)], room_type="dm"),
+        "!group:made-up": portal("Made-up Group", "made-up-login-1", [text(FRIEND, "Made-up", 2)]),
+        "!space:made-up": portal("Made-up Space", "made-up-login-1", [text(FRIEND, "Made-up", 3)], room_type="space"),
+    }
+    chats = {c.room: c.direct for c in _read(tmp_path, rooms)[0]}
+    assert chats == {"!dm:made-up": True, "!group:made-up": False, "!space:made-up": False}
+
+
+def test_a_chat_knows_whether_the_owner_has_written_in_it(tmp_path):
+    rooms = {
+        "!wrote:made-up": portal(
+            "Made-up A", "made-up-login-1", [text(FRIEND, "Made-up", 1), text(OWNER, "Made-up", 2)]
+        ),
+        "!never:made-up": portal("Made-up B", "made-up-login-1", [text(FRIEND, "Made-up", 3)]),
+    }
+    chats = {c.room: c.owner_wrote for c in _read(tmp_path, rooms)[0]}
+    assert chats == {"!wrote:made-up": True, "!never:made-up": False}

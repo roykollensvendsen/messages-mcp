@@ -1,0 +1,5 @@
+[[rule]]
+name = "only a room the bridge marks as a dm is one to one"
+file = "src/messages_mcp/matrix.py"
+find = 'direct=bridge\.get\(ROOM_TYPE\) == "dm",'
+replace = '        direct=True,'
