@@ -38,7 +38,8 @@ The steps, in full, are in [docs/setup.md](docs/setup.md):
 
 Why: these are system files, which need `sudo` on the owner's machine.
 
-Put these lines in `/etc/systemd/logind.conf.d/lid.conf`, then restart logind:
+Put these lines in `/etc/systemd/logind.conf.d/lid.conf`. They take effect at the next boot.
+Do not restart logind for them, since that can end the desktop session.
 
 ```
 [Login]
@@ -64,7 +65,8 @@ Check: `stat -c %a ~/.config/messages-mcp/door.toml` prints `600`.
 
 #### C. Install Synapse and ntfy
 
-Why: it installs packages on the owner's machine, with `sudo`.
+Why: it installs packages on the owner's machine, with `sudo`. The operator setting also lets the
+owner's user drive Tailscale without `sudo`, which widens who can change it.
 
 Install both with the system's package manager, as each project's install docs say. If
 `tailscale cert` needs root for the owner's user, let it run without:
@@ -72,6 +74,8 @@ Install both with the system's package manager, as each project's install docs s
 ```
 sudo tailscale set --operator=$USER
 ```
+
+To undo it, run `sudo tailscale set --operator=`.
 
 Check: `command -v ntfy` prints a path, and `tailscale cert --help` runs without `sudo`.
 
@@ -130,7 +134,7 @@ Why: claude-voice runs a new plugin only once its owner has typed its name.
 Do this only once the voice's private mark and its denies are in claude-voice.
 
 ```
-claude-voice plugins approve messages-mcp
+claude-voice plugins approve messages
 ```
 
 Check: `claude-voice plugins list` shows `messages` as approved.
