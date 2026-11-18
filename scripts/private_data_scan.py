@@ -9,6 +9,8 @@ for commit), on a commit message, or on the whole history:
 - no street address, such as a Norwegian street name followed by a number;
 - no coordinates more exact than two decimals;
 - no link to a Claude session, which points into one person's account;
+- no tailnet name, such as a device's ``*.ts.net`` name (examples write ``<laptop>.<tailnet>.ts.net``);
+- no phone number in international form (examples write ``+<country><number>``);
 - no word from the owner's own private list, such as a device's own name.
 
 The private list is ``~/.config/messages-mcp/private.toml``, holding ``words = ["...", ...]``.
@@ -47,6 +49,10 @@ STREET = re.compile(
 COORDINATES = re.compile(r"(?<![\d.])-?\d{1,2}\.\d{3,}\s*,\s*-?\d{1,3}\.\d{3,}(?![\d.])")
 #: A link into a Claude session, however the trailer is written.
 SESSION_LINK = re.compile(r"claude-session\s*:|claude\.ai/code/session_", re.IGNORECASE)
+#: A device's name on a tailnet; a placeholder in angle brackets has no letter right before ".ts.net".
+TAILNET_NAME = re.compile(r"[A-Za-z0-9-]\.ts\.net\b", re.IGNORECASE)
+#: A number as E.164 writes it, with or without spaces or dashes between the digits.
+PHONE = re.compile(r"(?<![\w+])\+\d(?:[ -]?\d){7,14}(?![\d])")
 
 
 class UnreadableListError(Exception):
@@ -76,6 +82,10 @@ def offences(text: str, private: set[str]) -> list[str]:
     found += [f"line {_line(text, m.start())}: a street address" for m in STREET.finditer(text)]
     found += [f"line {_line(text, m.start())}: exact coordinates" for m in COORDINATES.finditer(text)]
     found += [f"line {_line(text, m.start())}: a link to a Claude session" for m in SESSION_LINK.finditer(text)]
+    # RULE: a tailnet name is never committed
+    found += [f"line {_line(text, m.start())}: a tailnet name" for m in TAILNET_NAME.finditer(text)]
+    # RULE: a phone number is never committed
+    found += [f"line {_line(text, m.start())}: a phone number" for m in PHONE.finditer(text)]
     lowered = text.lower()
     for value in private:
         at = lowered.find(value.lower())
@@ -129,7 +139,9 @@ def main(argv: list[str] | None = None) -> int:
             sys.stderr.write(f"{where}, {offence}\n")
             bad += 1
     if bad:
-        sys.stderr.write("Use made-up names, 192.0.2.x, and two decimals at most in examples.\n")
+        sys.stderr.write(
+            "Use made-up names, 192.0.2.x, <laptop>.<tailnet>.ts.net, +<country><number> and two decimals at most.\n"
+        )
     return 1 if bad else 0
 
 
