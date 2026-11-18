@@ -167,10 +167,16 @@ member's, with that person's yes. Meta's terms forbid made-up accounts, so none 
 Log in to account 1 in a plain terminal. Account 2 follows a week later, if account 1 had no
 lock.
 
+Reading a message in Element, or by voice, does not mark it as read on Messenger: the bridge is
+sent no receipts. It stays unread in Messenger's own apps until it is opened there, or until a
+reply is sent in that chat.
+
 Check: do these with the second account on its own phone or browser, beside the laptop.
 1. From the second account, send account 1 a message that says only "test 1". It appears in
    Element within a minute.
-2. In Element, reply "test 2". It reaches the second account within a minute.
+2. In Element, reply "test 2". It reaches the second account within a minute. Note whether the
+   second account now shows the chat as read. A reply may well do that, as any reply does; it
+   is not a failure, but tell the manager what you saw.
 3. Send "test 3" from the second account. Open it in Element on the laptop and on the phone.
    Wait two minutes. On the second account, "test 3" must not show as seen or read.
 4. In Element, type in the reply box for ten seconds without sending. The second account must

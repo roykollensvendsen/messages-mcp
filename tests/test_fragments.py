@@ -92,6 +92,14 @@ def test_the_bridge_is_sent_no_receipts_typing_or_presence():
     assert _bridge()["appservice"]["ephemeral_events"] is False
 
 
+def test_the_guide_says_a_read_in_element_stays_unread_on_messenger():
+    """Quality n1 on #8: with no receipts sent to the bridge, the owner should know what that means."""
+    assert _bridge()["appservice"]["ephemeral_events"] is False
+    guide = " ".join((CONFIG.parent / "docs" / "setup.md").read_text(encoding="utf-8").split())
+    assert "Reading a message in Element, or by voice, does not mark it as read on Messenger" in guide
+    assert "or until a reply is sent in that chat" in guide
+
+
 def test_the_bridge_bot_is_the_one_the_plugin_trusts():
     """The fragment names the bot, and the plugin trusts m.bridge state from that name only."""
     from messages_mcp.matrix import BOT_USERNAME
