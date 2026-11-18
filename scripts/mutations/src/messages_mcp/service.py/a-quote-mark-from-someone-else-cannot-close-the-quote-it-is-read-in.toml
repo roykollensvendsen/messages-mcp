@@ -1,0 +1,5 @@
+[[rule]]
+name = "a quote mark from someone else cannot close the quote it is read in"
+file = "src/messages_mcp/service.py"
+find = 'flat = " "\.join\(text\.translate\(QUOTES\)\.split\(\)\)'
+replace = '    flat = " ".join(text.split())'

@@ -19,6 +19,7 @@ import datetime as dt
 import json
 import logging
 import time
+import urllib.parse
 from typing import TYPE_CHECKING, Any
 
 from messages_mcp.device import Chat, Message, NotSetUpError, UnreachableError
@@ -67,7 +68,7 @@ class MatrixInbox:
 
     async def chats(self) -> list[Chat]:
         """Every portal room, with its unread count and newest messages."""
-        homeserver, token = _login(self.login)
+        homeserver, token, owner = _login(self.login)
         started = time.monotonic()
         # mautrix and aiohttp are slow imports, and only a real read needs them.
         from aiohttp import ClientSession  # noqa: PLC0415
@@ -90,19 +91,33 @@ class MatrixInbox:
                 msg = "the inbox did not answer"
                 raise UnreachableError(msg) from failed
         rooms: dict[str, Any] = (synced or {}).get("rooms", {}).get("join", {})
-        chats = [chat for room in rooms.values() if (chat := _chat(room)) is not None]
+        chats = [chat for room in rooms.values() if (chat := _chat(room, owner)) is not None]
         log.info("read %d bridged chats of %d rooms in %.2f s", len(chats), len(rooms), time.monotonic() - started)
         return chats
 
 
-def _login(path: pathlib.Path) -> tuple[str, str]:
-    """The homeserver and token in `path`, or why the plugin is not set up."""
+#: The names of this laptop: the token can send as the owner, so it goes to no other host.
+LOOPBACK = {"127.0.0.1", "::1", "localhost"}
+
+
+def on_this_laptop(homeserver: str) -> bool:
+    """Whether `homeserver` is reached on this laptop's loopback, never across a network."""
+    # RULE: the plugin talks only to a synapse on this laptop
+    return urllib.parse.urlsplit(homeserver).hostname in LOOPBACK
+
+
+def _login(path: pathlib.Path) -> tuple[str, str, str]:
+    """The homeserver, token and owner's user ID in `path`, or why the plugin is not set up."""
     try:
         login = json.loads(path.read_text(encoding="utf-8"))
-        return str(login["homeserver"]), str(login["access_token"])
+        homeserver, token = str(login["homeserver"]), str(login["access_token"])
     except (OSError, ValueError, KeyError, TypeError) as missing:
         msg = f"no usable login in {path}; run: messages-mcp login"
         raise NotSetUpError(msg) from missing
+    if not on_this_laptop(homeserver):
+        msg = f"the login in {path} is for a server that is not on this laptop; run: messages-mcp login"
+        raise NotSetUpError(msg)
+    return homeserver, token, str(login.get("user_id", ""))
 
 
 def _events(room: dict[str, Any], part: str) -> list[dict[str, Any]]:
@@ -110,7 +125,7 @@ def _events(room: dict[str, Any], part: str) -> list[dict[str, Any]]:
     return [e for e in events if isinstance(e, dict)]
 
 
-def _chat(room: dict[str, Any]) -> Chat | None:
+def _chat(room: dict[str, Any], owner: str) -> Chat | None:
     """The chat in one synced room, or None when it is not a Messenger portal."""
     timeline = _events(room, "timeline")
     state = _state([*_events(room, "state"), *timeline])
@@ -119,7 +134,7 @@ def _chat(room: dict[str, Any]) -> Chat | None:
         return None
     channel = bridge.get("channel") or {}
     names = {key: str(c.get("displayname") or "") for (kind, key), c in state.items() if kind == "m.room.member"}
-    messages = tuple(m for e in timeline if (m := _message(e, names)) is not None)
+    messages = tuple(m for e in timeline if (m := _message(e, names, owner)) is not None)
     unread = int((room.get("unread_notifications") or {}).get("notification_count") or 0)
     name = str((state.get(("m.room.name", "")) or {}).get("name") or channel.get("displayname") or "a chat")
     return Chat(
@@ -145,17 +160,23 @@ def _bridge(state: dict[tuple[str, str], dict[str, Any]]) -> dict[str, Any] | No
     return bridge
 
 
-def _message(event: dict[str, Any], names: dict[str, str]) -> Message | None:
-    """One message event as a `Message`; None for anything that is not one."""
+def _message(event: dict[str, Any], names: dict[str, str], owner: str) -> Message | None:
+    """One message event as a `Message`; None for anything that is not one, or for an edit."""
     kind = event.get("type")
-    if kind not in {"m.room.message", "m.room.encrypted"} or "state_key" in event:
+    content = event.get("content") or {}
+    if kind not in {"m.room.message", "m.room.encrypted"} or "state_key" in event or _edit(content):
         return None
     sender = str(event.get("sender", ""))
+    own = bool(owner) and sender == owner
     who = names.get(sender) or sender.removeprefix("@").split(":")[0] or "someone"
     at = dt.datetime.fromtimestamp(int(event.get("origin_server_ts", 0)) / 1000, tz=dt.UTC)
     if kind == "m.room.encrypted":
-        return Message(who, at, kind="encrypted message")
-    content = event.get("content") or {}
+        return Message(who, at, kind="encrypted message", own=own)
     sort = KINDS.get(str(content.get("msgtype")), "other")
     body = str(content.get("body", "")) if sort == "text" else ""
-    return Message(who, at, body, sort)
+    return Message(who, at, body, sort, own=own)
+
+
+def _edit(content: dict[str, Any]) -> bool:
+    """Whether `content` changes an earlier message: the earlier one already says what was sent."""
+    return (content.get("m.relates_to") or {}).get("rel_type") == "m.replace"

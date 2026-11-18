@@ -55,3 +55,10 @@ def test_a_synapse_that_is_down_is_said(tmp_path):
     with pytest.raises(login.LoginError, match="did not answer"):
         asyncio.run(login.log_in("http://127.0.0.1:9", OWNER, PASSWORD, path))
     assert not path.exists()
+
+
+def test_a_synapse_that_is_not_on_this_laptop_gets_no_password(tmp_path):
+    path = tmp_path / "matrix-login.json"
+    with pytest.raises(login.LoginError, match="not on this laptop"):
+        asyncio.run(login.log_in("https://made-up.example.invalid", OWNER, PASSWORD, path))
+    assert not path.exists()

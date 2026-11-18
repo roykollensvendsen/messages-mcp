@@ -15,7 +15,7 @@ def test_the_chats_active_this_week_come_newest_first_with_no_text(tmp_path):
     assert [(i["chat"], i["unread"]) for i in answer["chats"]] == [("Made-up Today", 1), ("Made-up Tuesday", 0)]
     assert all(i["untrusted"] is True for i in answer["chats"])
     assert "secret" not in str(answer)
-    assert answer["say"] == "2 chats this week: Made-up Today, Made-up Tuesday."
+    assert answer["say"] == "2 chats this week: “Made-up Today”, “Made-up Tuesday”."
 
 
 def test_a_quiet_week_is_said(tmp_path):
