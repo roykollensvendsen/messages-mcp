@@ -257,6 +257,7 @@ def test_a_new_script_and_its_test_are_red_before_the_change_and_green_on_the_br
     git(repo, "config", "user.email", "a@b.c")
     git(repo, "config", "user.name", "A")
     (repo / "scripts/old.py").write_text("OLD = 1\n")
+    (repo / "pyproject.toml").write_text(PROJECT["pyproject.toml"])
     git(repo, "add", ".")
     git(repo, "commit", "-q", "-m", "base")
     base = git(repo, "rev-parse", "HEAD").strip()
@@ -286,8 +287,16 @@ def test_a_test_marked_to_fail_that_passes_does_not_count_as_passed(tmp_path):
     assert got == {"tests/test_x.py::test_x": "skipped"}
 
 
-def fake_pull_request(tmp_path, base_files, head_files):
-    """A repository with a base commit and a head commit; gives the folder and both hashes."""
+#: A base that holds a project, as every base does once the scaffold is on main.
+PROJECT = {"pyproject.toml": '[project]\nname = "scratch"\nversion = "0"\n'}
+
+
+def fake_pull_request(tmp_path, base_files, head_files, *, project=True):
+    """A repository with a base commit and a head commit; gives the folder and both hashes.
+
+    The base holds a `pyproject.toml` unless `project` is false, as a main with only a licence.
+    """
+    base_files = {**PROJECT, **base_files} if project else base_files
     repo = tmp_path / "repo"
     repo.mkdir()
     git(repo, "init", "-q", "-b", "main")
@@ -387,3 +396,36 @@ def test_a_run_that_fails_also_leaves_no_checkout_folder_behind(tmp_path, monkey
     with pytest.raises(SystemExit):
         red_first.run_both(base, head, cwd=repo, setup=lambda tree: [sys.executable])(["tests/test_a.py::test_a"])
     assert list(scratch.iterdir()) == []
+
+
+def _uv_like(tree):
+    """Sets a tree up as `uv sync` would: a tree with no project cannot be installed."""
+    if not (tree / "pyproject.toml").exists():
+        raise subprocess.CalledProcessError(2, ["uv", "sync"])
+    return [sys.executable]
+
+
+def test_a_base_with_no_project_yet_counts_every_test_as_failed_before_the_change(tmp_path, capsys):
+    """A repository's first pull request lands on a main that holds only its licence."""
+    test = "def test_a():\n    pass\n"
+    repo, base, head = fake_pull_request(
+        tmp_path, {"LICENSE": "made up\n"}, {**PROJECT, "tests/test_a.py": test}, project=False
+    )
+    ids = ["tests/test_a.py::test_a"]
+    before, after = red_first.run_both(base, head, cwd=repo, setup=_uv_like)(ids)
+    assert before == {ids[0]: "failed"}
+    assert after == {ids[0]: "passed"}
+    assert "no pyproject.toml" in capsys.readouterr().out
+
+
+def test_a_base_with_a_project_that_cannot_be_installed_still_stops_the_run(tmp_path):
+    """Only a base with no project at all is let through; any other failure to set it up is not."""
+    repo, base, head = fake_pull_request(
+        tmp_path, {"tests/test_old.py": "def test_old():\n    pass\n"}, {"tests/test_a.py": "def test_a():\n    pass\n"}
+    )
+
+    def broken(_tree):
+        raise subprocess.CalledProcessError(2, ["uv", "sync"])
+
+    with pytest.raises(subprocess.CalledProcessError):
+        red_first.run_both(base, head, cwd=repo, setup=broken)(["tests/test_a.py::test_a"])

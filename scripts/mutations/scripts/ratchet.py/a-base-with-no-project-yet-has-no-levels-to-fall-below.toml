@@ -1,0 +1,5 @@
+[[rule]]
+name = "a base with no project yet has no levels to fall below"
+file = "scripts/ratchet.py"
+find = 'if not \(copy / "pyproject\.toml"\)\.exists\(\):'
+replace = 'if False:'

@@ -276,10 +276,14 @@ def _git(repo, *args):
     return done.stdout
 
 
-def _clone(tmp_path):
+def _clone(tmp_path, *, project=None):
+    """A clone with two commits on main; with `project`, main holds that pyproject.toml."""
     here = tmp_path / "clone"
     here.mkdir()
     _git(here, "init", "-q", "-b", "main")
+    if project is not None:
+        (here / "pyproject.toml").write_text(project)
+        _git(here, "add", "pyproject.toml")
     for message in ("chore: Start", "chore: Go on"):
         _git(here, "commit", "-q", "--allow-empty", "-m", message)
     _git(here, "branch", "under-review")
@@ -323,7 +327,7 @@ def test_no_ratchet_run_drops_another_checkout_s_record():
 
 def test_a_measured_base_leaves_no_copy_behind(tmp_path, monkeypatch):
     """However measuring the base ends, here by failing to install it, its copy goes."""
-    here = _clone(tmp_path)
+    here = _clone(tmp_path, project=UNINSTALLABLE)
     monkeypatch.setattr(ratchet, "ROOT", here)
     monkeypatch.setattr(ratchet, "RATCHET_TMP", tmp_path / "ratchet-tmp")
     with pytest.raises((SystemExit, OSError)):
@@ -445,3 +449,24 @@ def test_both_tools_turn_a_stop_signal_into_a_clean_exit():
         main = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "main")
         calls = [ast.unparse(c.func) for c in ast.walk(main) if isinstance(c, ast.Call)]
         assert "temproot.exit_on_signals" in calls, script
+
+
+#: A project uv cannot install: it names no version.
+UNINSTALLABLE = '[project]\nname = "scratch"\n'
+
+
+def test_a_base_with_no_project_yet_has_no_levels_to_fall_below(tmp_path, monkeypatch):
+    """A repository's first pull request lands on a main that holds only its licence."""
+    here = _clone(tmp_path)
+    monkeypatch.setattr(ratchet, "RATCHET_TMP", tmp_path / "ratchet-tmp")
+    assert ratchet.measure_at("main", here) == {}
+    assert problems({}, measured()) == []
+    assert not (tmp_path / "ratchet-tmp").exists()
+
+
+def test_a_base_with_a_project_that_cannot_be_installed_still_stops_the_check(tmp_path, monkeypatch):
+    """Only a base with no project at all is let through; any other failure to install is not."""
+    here = _clone(tmp_path, project=UNINSTALLABLE)
+    monkeypatch.setattr(ratchet, "RATCHET_TMP", tmp_path / "ratchet-tmp")
+    with pytest.raises(SystemExit, match="Cannot install main"):
+        ratchet.measure_at("main", here)

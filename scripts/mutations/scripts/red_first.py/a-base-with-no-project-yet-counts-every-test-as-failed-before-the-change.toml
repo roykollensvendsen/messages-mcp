@@ -1,0 +1,5 @@
+[[rule]]
+name = "a base with no project yet counts every test as failed before the change"
+file = "scripts/red_first.py"
+find = 'if not \(tree / "pyproject\.toml"\)\.exists\(\):'
+replace = 'if False:'
