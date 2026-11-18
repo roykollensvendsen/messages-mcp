@@ -11,6 +11,7 @@ Nothing here marks a message read, and nothing here logs a name or a word of tex
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
 from typing import TYPE_CHECKING, Any
 
@@ -29,6 +30,10 @@ READ_CUT = 300
 READ_MOST = 10
 #: messages_chats lists the chats with activity in this many days.
 ACTIVE_DAYS = 7
+#: Names other people chose, of chats and of people, are cut to this many characters.
+NAME_CUT = 60
+#: Every quote mark someone else could use to end the quote the voice reads them in: “ ” " « » „ and the single ones.
+QUOTES = str.maketrans(dict.fromkeys('\u201c\u201d"\u00ab\u00bb\u201e\u2039\u203a\u201a\u2018\u2019`', "'"))
 
 UNREACHABLE = "The message inbox isn't answering. Check that Synapse is running on the laptop."
 NOT_SET_UP = "messages-mcp isn't logged in to the inbox yet, so nothing was read."
@@ -41,6 +46,24 @@ def cut(text: str, most: int) -> tuple[str, bool]:
     if len(text) <= most:
         return text, False
     return text[:most].rstrip() + "…", True
+
+
+def clean(text: str) -> str:
+    """Someone else's text on one line, with no quote mark that could end its quote early."""
+    # RULE: a quote mark from someone else cannot close the quote it is read in
+    flat = " ".join(text.translate(QUOTES).split())
+    return "".join(ch for ch in flat if ch.isprintable())
+
+
+def _cleaned(chat: Chat) -> Chat:
+    """`chat` as the voice may hear it: names cut, every text cleaned, the owner's own messages left out."""
+    messages = tuple(
+        dataclasses.replace(m, sender=cut(clean(m.sender), NAME_CUT)[0], body=clean(m.body))
+        for m in chat.messages
+        # RULE: the owners own messages are not read back as news
+        if not m.own
+    )
+    return dataclasses.replace(chat, name=cut(clean(chat.name), NAME_CUT)[0], messages=messages)
 
 
 def _spoken(message: Message, most: int) -> tuple[str, bool]:
@@ -96,7 +119,7 @@ class MessagesService:
         unread = found.messages[-min(found.unread, READ_MOST) :] if found.unread else ()
         items = [_read_item(message) for message in unread]
         if not items:
-            return _answered("read", f"No unread messages in {found.name}.", news, chat=found.name, messages=[])
+            return _answered("read", f"No unread messages in “{found.name}”.", news, chat=found.name, messages=[])
         return _answered("read", _read_say(found.name, items), news, chat=found.name, messages=items)
 
     async def chats(self, account: str | None = None) -> dict[str, Any]:
@@ -140,7 +163,7 @@ def _unread_item(chat: Chat, label: str | None) -> tuple[dict[str, Any], str]:
         "untrusted": True,
     }
     where = f"{label}, " if label else ""
-    return item, f"{where}{chat.name}: {chat.unread} new; {latest.sender} wrote: “{text}”."
+    return item, f"{where}“{chat.name}”: {chat.unread} new; “{latest.sender}” wrote: “{text}”."
 
 
 def _receivers(chats: list[Chat]) -> list[str]:
@@ -149,7 +172,7 @@ def _receivers(chats: list[Chat]) -> list[str]:
 
 def _of(account: str | None, chats: list[Chat], labels: dict[str, str | None]) -> list[Chat]:
     """The chats of `account`, or every chat when none is asked for."""
-    return [chat for chat in chats if _in(labels, chat, account)]
+    return [_cleaned(chat) for chat in chats if _in(labels, chat, account)]
 
 
 def _unread(chats: list[Chat], labels: dict[str, str | None]) -> tuple[list[dict[str, Any]], str]:
@@ -168,14 +191,14 @@ def _has_news(chat: Chat) -> bool:
 
 
 def _read_say(name: str, items: list[dict[str, Any]]) -> str:
-    said = " ".join(f"{m['from']} wrote: “{m['quoted_text']}”." for m in items)
-    return f"{name}, {len(items)} unread. {said} They stay unread."
+    said = " ".join(f"“{m['from']}” wrote: “{m['quoted_text']}”." for m in items)
+    return f"“{name}”, {len(items)} unread. {said} They stay unread."
 
 
 def _chats_say(active: list[Chat]) -> str:
     if not active:
         return "No chats this week."
-    return f"{len(active)} chats this week: " + ", ".join(c.name for c in active) + "."
+    return f"{len(active)} chats this week: " + ", ".join(f"“{c.name}”" for c in active) + "."
 
 
 def _unread_say(lines: list[str]) -> str:
@@ -207,7 +230,7 @@ def _find(name: str, chats: list[Chat]) -> Chat | str:
         return near[0]
     if not near:
         return "No chat by that name."
-    return "More than one chat matches: " + ", ".join(c.name for c in near[:5]) + ". Which one?"
+    return "More than one chat matches: " + ", ".join(f"“{c.name}”" for c in near[:5]) + ". Which one?"
 
 
 def _exactly(wanted: str, chats: list[Chat]) -> list[Chat]:

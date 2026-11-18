@@ -9,7 +9,7 @@ from messages_mcp import cli
 def test_unread_says_what_the_voice_would_hear(capsys):
     assert cli.main(["unread", "--simulate"]) == 0
     said = capsys.readouterr().out
-    assert said.startswith("Simulated: 2 chats with new messages. Made-up Friend: 2 new; ")
+    assert said.startswith("Simulated: 2 chats with new messages. “Made-up Friend”: 2 new; ")
 
 
 @pytest.mark.usefixtures("own_folders")

@@ -1,0 +1,5 @@
+[[rule]]
+name = "the owners own messages are not read back as news"
+file = "src/messages_mcp/service.py"
+find = 'if not m\.own$'
+replace = '        if True'

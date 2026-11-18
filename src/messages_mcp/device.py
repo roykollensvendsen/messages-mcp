@@ -36,6 +36,8 @@ class Message:
     body: str = ""
     #: "text", or what was sent instead: "picture", "voice message", "video", "file" or "other".
     kind: str = "text"
+    #: Sent by the owner, from Element: kept for the record, never read back as news.
+    own: bool = False
 
 
 @dataclass(frozen=True)

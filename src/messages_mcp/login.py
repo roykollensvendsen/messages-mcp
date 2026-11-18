@@ -13,6 +13,7 @@ import json
 from typing import TYPE_CHECKING
 
 from messages_mcp.bridge_config import write_private
+from messages_mcp.matrix import on_this_laptop
 
 if TYPE_CHECKING:
     import pathlib
@@ -33,6 +34,9 @@ async def log_in(homeserver: str, user: str, password: str, path: pathlib.Path) 
     from mautrix.errors import MatrixRequestError  # noqa: PLC0415
     from mautrix.types import UserID  # noqa: PLC0415
 
+    if not on_this_laptop(homeserver):
+        msg = f"{homeserver} is not on this laptop; the plugin logs in only to the Synapse here"
+        raise LoginError(msg)
     async with ClientSession() as session:
         client = ClientAPI(base_url=homeserver, client_session=session)
         try:

@@ -6,10 +6,10 @@ import logging
 
 import aiohttp
 import pytest
-from homeserver import ELEMENT_TOKEN, PLUGIN_TOKEN, plain, portal, serving, text
+from homeserver import ELEMENT_TOKEN, OWNER, PLUGIN_TOKEN, plain, portal, serving, text
 
 from messages_mcp.device import NotSetUpError, UnreachableError
-from messages_mcp.matrix import MatrixInbox
+from messages_mcp.matrix import MatrixInbox, on_this_laptop
 
 FRIEND = "@meta_made-up-1:made-up"
 COACH = "@meta_made-up-2:made-up"
@@ -33,7 +33,7 @@ ROOMS = {
 
 def _login(tmp_path, url):
     path = tmp_path / "matrix-login.json"
-    path.write_text(json.dumps({"homeserver": url, "access_token": PLUGIN_TOKEN}))
+    path.write_text(json.dumps({"homeserver": url, "access_token": PLUGIN_TOKEN, "user_id": OWNER}))
     return path
 
 
@@ -152,3 +152,28 @@ def test_a_reaction_or_a_state_change_is_no_message(tmp_path):
         {"type": "m.room.message", "content": {}, "sender": FRIEND, "origin_server_ts": 3, "state_key": ""},
     ]
     assert [m.body for m in _read(tmp_path, {"!r:made-up": room})[0][0].messages] == ["Made-up"]
+
+
+def test_an_edit_is_no_new_message_and_the_owners_own_is_marked(tmp_path):
+    room = portal("Made-up Chat", "made-up-login-1", [text(FRIEND, "Made-up", 1), text(OWNER, "Made-up reply", 2)])
+    edit = {
+        "msgtype": "m.text",
+        "body": "* Made-up",
+        "m.relates_to": {"rel_type": "m.replace", "event_id": "$made-up-0"},
+    }
+    room["timeline"].append({"type": "m.room.message", "content": edit, "sender": FRIEND, "origin_server_ts": 3})
+    messages = _read(tmp_path, {"!r:made-up": room})[0][0].messages
+    assert [(m.body, m.own) for m in messages] == [("Made-up", False), ("Made-up reply", True)]
+
+
+def test_the_plugin_talks_only_to_a_synapse_on_this_laptop(tmp_path):
+    """Its token can send as the owner, so it is never sent across a network (quality f1 on #7)."""
+    assert on_this_laptop("http://127.0.0.1:8008")
+    assert on_this_laptop("http://[::1]:8008")
+    assert on_this_laptop("http://localhost:8008")
+    assert not on_this_laptop("https://made-up-laptop.example.invalid:8448")
+    assert not on_this_laptop("http://127.0.0.1.example.invalid")
+    path = tmp_path / "matrix-login.json"
+    path.write_text(json.dumps({"homeserver": "https://made-up.example.invalid", "access_token": PLUGIN_TOKEN}))
+    with pytest.raises(NotSetUpError, match="not on this laptop"):
+        asyncio.run(MatrixInbox(path).chats())

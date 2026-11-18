@@ -1,0 +1,5 @@
+[[rule]]
+name = "the plugin talks only to a synapse on this laptop"
+file = "src/messages_mcp/matrix.py"
+find = 'return urllib\.parse\.urlsplit\(homeserver\)\.hostname in LOOPBACK'
+replace = '    return True'
