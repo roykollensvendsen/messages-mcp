@@ -84,6 +84,7 @@ CORE = {
     # What M5 adds: renewing the door's certificate, and our settings in the bridge's config.
     "door_cert",
     "bridge_config",
+    "ntfy_config",
 }
 TOP = {"server", "cli"}
 #: Which layers each layer may import from this package, and the outside packages it never may.

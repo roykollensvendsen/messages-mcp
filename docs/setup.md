@@ -118,16 +118,30 @@ Check: `curl -s http://127.0.0.1:8008/_matrix/client/versions` prints JSON with 
 Wait for owner step C.
 
 ntfy tells the phone that something is new. It never carries the message text. It listens on
-127.0.0.1:2586 only, behind the door, and keeps its cache in memory.
+127.0.0.1:2586 only, behind the door, and keeps its cache in memory. Our settings,
+`config/ntfy/server.yml`, let nobody read or send without an entry of their own. The phone gets
+one in owner step G.
 
-<!-- not run: it starts a service on the host -->
+`messages-mcp ntfy-config` writes them to ntfy's config, with the door's address for this
+laptop and the place of ntfy's user list. That list is in `~/.local/state/ntfy`, a folder only
+the owner can open.
+
+UnifiedPush needs Synapse to send without logging in (ntfy's own docs), so step G lets anyone
+send, but only to the `up*` topics. Every process on this laptop can read Synapse's data, and so
+the phone's topic name. So a local process could still send the phone a fake "something is new"
+ping. It carries no text, and it can't read anything.
+
+<!-- not run: it writes ntfy's config and starts a service on the host -->
 ```
+messages-mcp ntfy-config config/ntfy/server.yml ~/.config/ntfy/server.yml
 cp systemd/ntfy.service ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable --now ntfy.service
 ```
 
-Check: `curl -s http://127.0.0.1:2586/v1/health` prints `{"healthy":true}`.
+Check: `curl -s http://127.0.0.1:2586/v1/health` prints `{"healthy":true}`, and
+`curl -s -o /dev/null -w '%{http_code}\n' 'http://127.0.0.1:2586/up-made-up/json?poll=1'`
+prints `403`.
 
 ### 6. Bridge Messenger with mautrix-meta
 
@@ -161,6 +175,12 @@ systemctl --user enable --now mautrix-meta.service
 ```
 
 Check: `systemctl --user is-active mautrix-meta.service` prints `active`.
+
+`bridge-config` lets every user of this laptop's Synapse use the bridge, as an ordinary user, and
+nobody as an admin. That is enough to log in. For the bridge's admin commands, add the owner's
+own Matrix user to `bridge.permissions` in `~/.local/share/mautrix-meta/config.yaml`, as
+`"@<user>:<laptop>.<tailnet>.ts.net": admin`, and restart the bridge. A later `bridge-config`
+run takes the line out again.
 
 ### 7. Add the plugin to claude-voice
 
@@ -285,12 +305,24 @@ Check: the connection is refused, and `~/.local/state/messages-mcp/door.log` has
 ### G. Paste the tailnet rule, and give the phone its push token
 
 <!-- owner -->
-Why: the rule is a policy in the owner's own Tailscale account, and the token is a secret.
+Why: the rule is a policy in the owner's own Tailscale account, and the phone's password is a
+secret only the owner types.
 
 Paste the prepared rule into the Tailscale admin page. It gives only the phone and the laptop
-port 8448 and ntfy's port. Install the ntfy app on the phone, and give it its token.
+port 8448 and ntfy's port. Then give the phone its own entry in ntfy, which asks for a password
+twice, and let Synapse send to the `up*` topics:
 
-Check: the ntfy app shows its topic as connected.
+```
+ntfy user --config ~/.config/ntfy/server.yml add phone
+ntfy access --config ~/.config/ntfy/server.yml phone 'up*' read-only
+ntfy access --config ~/.config/ntfy/server.yml '*' 'up*' write-only
+```
+
+Install the ntfy app on the phone. In Settings, Manage Users, Add New User, give it
+`https://<laptop>.<tailnet>.ts.net:2586`, the user `phone` and that password.
+
+Check: `ntfy access --config ~/.config/ntfy/server.yml` lists only those two entries, and the
+ntfy app shows its topic as connected.
 
 ### H. Log in to Messenger through the bridge
 

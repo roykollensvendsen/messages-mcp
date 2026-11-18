@@ -1,0 +1,6 @@
+# messages-mcp's settings for ntfy. `messages-mcp ntfy-config` (docs/setup.md, step 5) writes
+# them to ~/.config/ntfy/server.yml with this laptop's base-url and the place of the user list.
+# tests/test_fragments.py holds them.
+
+# Nobody reads or sends without an entry of their own (owner step G gives the phone one).
+auth-default-access: deny-all

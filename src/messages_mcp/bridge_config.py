@@ -47,10 +47,10 @@ def apply(ours: pathlib.Path, config: pathlib.Path, domain: str) -> None:
     result["homeserver"] = {**result.get("homeserver", {}), "domain": domain}
     # RULE: only matrix users on this laptop may use the bridge
     result["bridge"] = {**result.get("bridge", {}), "permissions": {domain: "user"}}
-    _write(config, yaml.safe_dump(result, sort_keys=False, allow_unicode=True))
+    write_private(config, yaml.safe_dump(result, sort_keys=False, allow_unicode=True))
 
 
-def _write(config: pathlib.Path, text: str) -> None:
+def write_private(config: pathlib.Path, text: str) -> None:
     """Replace `config` whole, so a stop half way leaves the old one."""
     fd, name = tempfile.mkstemp(dir=config.parent, prefix=".config-", suffix=".yaml")
     try:

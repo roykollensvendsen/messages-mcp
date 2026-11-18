@@ -83,3 +83,16 @@ def test_the_bridge_talks_to_synapse_on_this_laptop_and_listens_here_only():
 def test_the_bridge_keeps_ephemeral_events_on_until_measured():
     """Off might break encryption; a decoy test settles it later (voice-architect, M5)."""
     assert _bridge()["appservice"]["ephemeral_events"] is True
+
+
+def test_the_bridge_has_no_relay():
+    """A relay would let others talk through the owner's account (voice-architect f2 on #4)."""
+    relay = _bridge()["bridge"]["relay"]
+    assert relay["enabled"] is False
+    assert relay["default_relays"] == []
+
+
+def test_ntfy_lets_nobody_in_without_an_entry_of_their_own():
+    ntfy = yaml.safe_load((CONFIG / "ntfy/server.yml").read_text())
+    assert ntfy["auth-default-access"] == "deny-all"
+    assert "auth-file" not in ntfy, "the auth file's place is filled in on the laptop, never committed"

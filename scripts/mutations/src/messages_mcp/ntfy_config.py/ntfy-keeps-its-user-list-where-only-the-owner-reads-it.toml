@@ -1,0 +1,5 @@
+[[rule]]
+name = "ntfy keeps its user list where only the owner reads it"
+file = "src/messages_mcp/ntfy_config.py"
+find = 'users\.chmod\(0o700\)'
+replace = 'users.chmod(0o755)'

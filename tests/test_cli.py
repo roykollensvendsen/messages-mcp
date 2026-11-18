@@ -89,3 +89,24 @@ def test_the_bridge_config_with_no_tailscaled_is_left_alone(own_folders, capsys)
     assert cli.main(["bridge-config", "ours.yaml", str(config)]) == 1
     assert "left as it was" in capsys.readouterr().err
     assert config.read_text() == "appservice: {}\n"
+
+
+def test_ntfy_gets_its_config_for_this_laptops_name(own_folders, monkeypatch):
+    import pathlib
+
+    import yaml
+
+    async def own_name(_self):
+        return "made-up-laptop.example.invalid"
+
+    monkeypatch.setattr(cli.LocalAPI, "own_name", own_name)
+    ours = pathlib.Path(__file__).parent.parent / "config/ntfy/server.yml"
+    target = own_folders / "ntfy.yml"
+    assert cli.main(["ntfy-config", str(ours), str(target)]) == 0
+    assert yaml.safe_load(target.read_text())["base-url"] == "https://made-up-laptop.example.invalid:2586"
+
+
+def test_ntfys_config_with_no_tailscaled_is_not_written(own_folders, capsys):
+    assert cli.main(["ntfy-config", "ours.yml", str(own_folders / "ntfy.yml")]) == 1
+    assert "not written" in capsys.readouterr().err
+    assert not (own_folders / "ntfy.yml").exists()

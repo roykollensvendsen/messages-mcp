@@ -1,19 +1,21 @@
 # ntfy, which tells the phone that something is new, as a systemd user unit. docs/setup.md,
-# step 5, installs it. It listens on this laptop only, so matrix-door is the one way in, and
-# it keeps no file: its cache is in memory.
+# step 5, installs it. It listens on this laptop only, so matrix-door is the one way in. Its
+# cache is in memory; the only file it writes is its user list.
 [Unit]
 Description=ntfy: tells the phone that something is new, on this laptop only
 After=network-online.target
 Wants=network-online.target
 
 [Service]
-ExecStart=ntfy serve --listen-http 127.0.0.1:2586
+ExecStart=ntfy serve --config %h/.config/ntfy/server.yml --listen-http 127.0.0.1:2586
 Restart=on-failure
 RestartSec=10
 UMask=0077
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
+# Its user list, which `messages-mcp ntfy-config` places here; UMask keeps it 0600.
+ReadWritePaths=%h/.local/state/ntfy
 
 [Install]
 WantedBy=default.target

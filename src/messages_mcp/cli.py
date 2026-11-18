@@ -9,14 +9,14 @@ import pathlib
 import ssl
 import sys
 
-from messages_mcp import bridge_config, door, door_cert, door_list, platform, settings
+from messages_mcp import bridge_config, door, door_cert, door_list, ntfy_config, platform, settings
 from messages_mcp.device import Unconnected
 from messages_mcp.fake import FakeGizmo
 from messages_mcp.localapi import LocalAPI, LocalAPIError
 from messages_mcp.service import MessagesService
 
 #: Every verb this command has.
-COMMANDS: tuple[str, ...] = ("serve", "status", "door", "door-cert", "bridge-config")
+COMMANDS: tuple[str, ...] = ("serve", "status", "door", "door-cert", "bridge-config", "ntfy-config")
 #: Help is laid out at one width on every terminal, so a page's copy of it stays true.
 HELP = functools.partial(argparse.HelpFormatter, width=100)
 
@@ -34,13 +34,21 @@ def main(argv: list[str] | None = None) -> int:
     bridge = verbs.add_parser("bridge-config", formatter_class=HELP, help="put our settings into mautrix-meta's config")
     bridge.add_argument("ours", type=pathlib.Path, help="our settings: config/mautrix-meta/messages-mcp.yaml")
     bridge.add_argument("config", type=pathlib.Path, help="the config the bridge generated for itself")
+    ntfy = verbs.add_parser("ntfy-config", formatter_class=HELP, help="write ntfy's config for this laptop")
+    ntfy.add_argument("ours", type=pathlib.Path, help="our settings: config/ntfy/server.yml")
+    ntfy.add_argument("config", type=pathlib.Path, help="where ntfy reads its config: ~/.config/ntfy/server.yml")
     args = parser.parse_args(argv)
     try:
         configured = settings.load()
     except settings.SettingsError as broken:
         sys.stderr.write(f"{broken}\n")
         return 2
-    runs = {"door": run_door, "door-cert": run_door_cert, "bridge-config": run_bridge_config}
+    runs = {
+        "door": run_door,
+        "door-cert": run_door_cert,
+        "bridge-config": run_bridge_config,
+        "ntfy-config": run_ntfy_config,
+    }
     return runs.get(args.command, _answer)(args, configured)
 
 
@@ -107,6 +115,18 @@ def run_bridge_config(args: argparse.Namespace, _configured: settings.Settings) 
         bridge_config.apply(args.ours, args.config, asyncio.run(api.own_name()))
     except (LocalAPIError, bridge_config.BridgeConfigError) as failed:
         sys.stderr.write(f"{failed}; {args.config} left as it was\n")
+        return 1
+    return 0
+
+
+def run_ntfy_config(args: argparse.Namespace, _configured: settings.Settings) -> int:
+    """Write ntfy's config for this laptop's name; 1 when it cannot."""
+    here = platform.current()
+    api = LocalAPI(here.tailscaled_socket(), door.WHOIS_TIMEOUT)
+    try:
+        ntfy_config.apply(args.ours, args.config, asyncio.run(api.own_name()), here.state_home())
+    except (LocalAPIError, ntfy_config.NtfyConfigError) as failed:
+        sys.stderr.write(f"{failed}; {args.config} not written\n")
         return 1
     return 0
 

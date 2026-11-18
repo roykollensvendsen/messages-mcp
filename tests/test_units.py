@@ -44,6 +44,13 @@ def test_ntfy_listens_on_this_laptop_only():
     assert command[command.index("--listen-http") + 1] == "127.0.0.1:2586"
 
 
+def test_ntfy_reads_the_config_made_for_this_laptop_and_writes_only_its_user_list():
+    service = _unit("ntfy.service")["Service"]
+    command = service["ExecStart"].split()
+    assert command[command.index("--config") + 1] == "%h/.config/ntfy/server.yml"
+    assert service["ReadWritePaths"] == "%h/.local/state/ntfy"
+
+
 def test_the_bridge_starts_after_synapse_and_needs_it():
     unit = _unit("mautrix-meta.service")["Unit"]
     assert "synapse.service" in unit["After"].split()
