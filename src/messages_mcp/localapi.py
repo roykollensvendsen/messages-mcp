@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import urllib.parse
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -48,7 +49,7 @@ class LocalAPI:
         try:
             writer.write(f"GET {path} HTTP/1.0\r\nHost: {HOST}\r\n\r\n".encode("ascii"))
             await writer.drain()
-            answer = await reader.read(MOST)
+            answer = await _to_the_end(reader)
         finally:
             writer.close()
         head, _, body = answer.partition(b"\r\n\r\n")
@@ -60,7 +61,9 @@ class LocalAPI:
 
     async def whois(self, ip: str, port: int) -> dict[str, Any]:
         """The node record tailscaled keeps for the device at `ip`:`port`."""
-        answer = await self.get(f"/localapi/v0/whois?addr={ip}:{port}")
+        # RULE: whois names an IPv6 caller in brackets
+        where = f"[{ip}]:{port}" if ":" in ip else f"{ip}:{port}"
+        answer = await self.get("/localapi/v0/whois?addr=" + urllib.parse.quote(where, safe=""))
         node = answer.get("Node") if isinstance(answer, dict) else None
         if not isinstance(node, dict) or not node.get("StableID"):
             msg = "whois answered with no node"
@@ -76,8 +79,35 @@ class LocalAPI:
             raise LocalAPIError(msg)
         return [str(a) for a in addresses]
 
-    async def funnel_ports(self) -> set[int]:
-        """The ports Funnel opens to the whole internet."""
+    async def exposure(self) -> tuple[set[int], set[int]]:
+        """The ports Funnel opens to the internet, and the local ports Tailscale serve passes on."""
         answer = await self.get("/localapi/v0/serve-config")
-        allowed = (answer or {}).get("AllowFunnel") or {} if isinstance(answer, dict) else {}
-        return {int(where.rsplit(":", 1)[1]) for where, on in allowed.items() if on}
+        config = answer if isinstance(answer, dict) else {}
+        funnel = [_port(where) for where, on in (config.get("AllowFunnel") or {}).items() if on]
+        passed = [_port(str(rule.get("TCPForward", ""))) for rule in (config.get("TCP") or {}).values()]
+        for site in (config.get("Web") or {}).values():
+            passed += [_port(str(h.get("Proxy", ""))) for h in (site.get("Handlers") or {}).values()]
+        return {p for p in funnel if p is not None}, {p for p in passed if p is not None}
+
+
+async def _to_the_end(reader: asyncio.StreamReader) -> bytes:
+    """Everything tailscaled sends before it closes; an answer bigger than `MOST` is refused."""
+    answer = b""
+    # RULE: an answer from tailscaled is read to its end, however it is split
+    while chunk := await reader.read(1 << 16):
+        answer += chunk
+        if len(answer) > MOST:
+            msg = f"the answer was over {MOST} bytes"
+            raise ValueError(msg)
+    return answer
+
+
+def _port(where: str) -> int | None:
+    """The port in `host:port`, a URL or a bare port number; None when there is none."""
+    if where.isdigit():
+        return int(where)
+    tail = urllib.parse.urlsplit(where if "//" in where else "//" + where)
+    try:
+        return tail.port
+    except ValueError:
+        return None

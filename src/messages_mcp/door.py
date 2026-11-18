@@ -32,8 +32,16 @@ if TYPE_CHECKING:
 WHOIS_TIMEOUT = 2.0
 #: How long a device that got in may take over its TLS handshake.
 HANDSHAKE_TIMEOUT = 10.0
+#: How often a running door asks again whether Funnel or Tailscale serve opened a way round it.
+CHECK_EVERY = 60.0
 #: How long the refusal log keeps a line.
 KEEP_DAYS = 30
+#: The most lines the refusal log keeps, newest first, whatever their age.
+KEEP_LINES = 10_000
+#: One line per caller in this many seconds; the refusals in between are counted on the next.
+QUIET = 60.0
+#: How long a call that got in may go with no byte either way before the door ends it.
+IDLE_TIMEOUT = 300.0
 #: Where the services behind the door listen, on this laptop only.
 UPSTREAM_HOST = "127.0.0.1"
 CHUNK = 1 << 16
@@ -97,21 +105,34 @@ async def check(
 
 
 class RefusalLog:
-    """One line per refusal, kept on this laptop for `KEEP_DAYS` days and readable by the owner only."""
+    """The refusals, kept on this laptop for `KEEP_DAYS` days and readable by the owner only.
+
+    A caller that keeps knocking gets one line in each `QUIET` seconds. The line after that
+    says how many were refused in between, so a loop never floods the log or the disk.
+    """
 
     def __init__(self, path: pathlib.Path, now: Callable[[], dt.datetime] | None = None) -> None:
         """Write to `path`, telling the time with `now`."""
         self.path = path
         self.now = now or (lambda: dt.datetime.now(dt.UTC))
+        self._last: dict[str, tuple[dt.datetime, int]] = {}
 
     def write(self, verdict: Verdict) -> None:
-        """Add the refusal, and drop the lines that are older than the log keeps."""
-        self.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        """Add the refusal, or count it when its caller already has a line this minute."""
         now = self.now()
-        fields = [now.isoformat(timespec="seconds"), verdict.name or "-", verdict.stable_id or "-", verdict.reason]
+        caller = verdict.stable_id or verdict.reason
+        last, between = self._last.get(caller, (None, 0))
+        # RULE: a caller that keeps knocking gets one line a minute
+        if last is not None and (now - last).total_seconds() < QUIET:
+            self._last[caller] = (last, between + 1)
+            return
+        self._last[caller] = (now, 0)
+        reason = f"{verdict.reason} ({between} more before this)" if between else verdict.reason
+        fields = [now.isoformat(timespec="seconds"), verdict.name or "-", verdict.stable_id or "-", reason]
         # RULE: a refusal is one line however its device is named
         line = "\t".join(re.sub(r"\s+", " ", field).strip() or "-" for field in fields) + "\n"
-        kept = [old for old in self._lines() if self._young(old, now)]
+        kept = [old for old in self._lines() if self._young(old, now)][-(KEEP_LINES - 1) :]
+        self.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         fd = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w", encoding="utf-8") as out:
             out.writelines([*kept, line])
@@ -141,11 +162,11 @@ class Door:
         allow: Callable[[], frozenset[str]],
         log: RefusalLog,
         tls: ssl.SSLContext | None,
-        upstream_host: str = UPSTREAM_HOST,
+        idle: float = IDLE_TIMEOUT,
     ) -> None:
         """Check callers with `ask` and `allow`, and pass the ones that get in over `tls`."""
         self.ask, self.allow, self.log, self.tls = ask, allow, log, tls
-        self.upstream_host = upstream_host
+        self.idle = idle
         self._tasks: set[asyncio.Task[None]] = set()
 
     async def handle(self, sock: socket.socket, upstream: int) -> None:
@@ -173,11 +194,19 @@ class Door:
             return
         writer = asyncio.StreamWriter(transport, protocol, reader, loop)
         try:
-            up_reader, up_writer = await asyncio.open_connection(self.upstream_host, upstream)
+            up_reader, up_writer = await asyncio.open_connection(UPSTREAM_HOST, upstream)
         except OSError:
             writer.close()
             return
-        await asyncio.gather(_pump(reader, up_writer), _pump(up_reader, writer))
+        heard = [loop.time()]
+        both = asyncio.gather(_pump(reader, up_writer, heard), _pump(up_reader, writer, heard))
+        # RULE: a call with no byte either way for the idle time is ended
+        while not both.done():
+            await asyncio.wait([both], timeout=self.idle)
+            if not both.done() and loop.time() - heard[0] >= self.idle:
+                for end in (writer, up_writer):
+                    end.close()
+                await both
 
     def listen(self, host: str, port: int) -> socket.socket:
         """A listening socket on `host`:`port`; port 0 takes any free one."""
@@ -206,10 +235,12 @@ class Door:
             task.add_done_callback(self._tasks.discard)
 
 
-async def _pump(source: asyncio.StreamReader, sink: asyncio.StreamWriter) -> None:
-    """Copy `source` to `sink` until either end closes."""
+async def _pump(source: asyncio.StreamReader, sink: asyncio.StreamWriter, heard: list[float]) -> None:
+    """Copy `source` to `sink` until either end closes, noting in `heard` when bytes last went by."""
+    loop = asyncio.get_running_loop()
     try:
         while chunk := await source.read(CHUNK):
+            heard[0] = loop.time()
             sink.write(chunk)
             await sink.drain()
     except (ConnectionError, ssl.SSLError):
@@ -227,18 +258,52 @@ def tls_context(cert: pathlib.Path, key: pathlib.Path) -> ssl.SSLContext:
     return context
 
 
-async def start(api: Any, allow: Callable[[], frozenset[str]], log: RefusalLog, tls: ssl.SSLContext) -> None:  # noqa: ANN401 - a LocalAPI or a test's stand-in
-    """Refuse to start while Funnel is on for a door port; otherwise listen on every own address."""
+async def start(
+    api: Any,  # noqa: ANN401 - a LocalAPI or a test's stand-in
+    allow: Callable[[], frozenset[str]],
+    log: RefusalLog,
+    tls: ssl.SSLContext | None,
+    every: float = CHECK_EVERY,
+) -> None:
+    """Listen on every own address while no way round the door is open, asking again `every` seconds."""
+    await _no_way_round(api)
     try:
-        funnelled = await api.funnel_ports()
         hosts = await api.own_addresses()
     except LocalAPIError as unsure:
         msg = f"matrix-door cannot start: {unsure}"
+        raise DoorError(msg) from unsure
+    door = Door(api.whois, allow, log, tls)
+    listeners = [(door.listen(host, route.listen), route.upstream) for host in hosts for route in ROUTES]
+    try:
+        async with asyncio.TaskGroup() as running:
+            running.create_task(door.serve(listeners))
+            running.create_task(_watch(api, every))
+    except* DoorError as stopped:
+        raise stopped.exceptions[0] from None
+
+
+async def _watch(api: Any, every: float) -> None:  # noqa: ANN401
+    """Stop the door as soon as a way round it opens."""
+    while True:
+        await asyncio.sleep(every)
+        # RULE: a running door stops when a way round it opens
+        await _no_way_round(api)
+
+
+async def _no_way_round(api: Any) -> None:  # noqa: ANN401
+    """Raise DoorError when Funnel opens a door port, Tailscale serve passes on a service, or it can't tell."""
+    try:
+        funnelled, passed = await api.exposure()
+    except LocalAPIError as unsure:
+        msg = f"matrix-door cannot run, since it cannot tell whether a way round it is open: {unsure}"
         raise DoorError(msg) from unsure
     ports = {route.listen for route in ROUTES}
     # RULE: the door will not start while Funnel opens one of its ports
     if funnelled & ports:
         msg = f"Funnel opens port {', '.join(map(str, sorted(funnelled & ports)))} to the internet; turn it off first"
         raise DoorError(msg)
-    door = Door(api.whois, allow, log, tls)
-    await door.serve([(door.listen(host, route.listen), route.upstream) for host in hosts for route in ROUTES])
+    services = {route.upstream for route in ROUTES}
+    # RULE: the door will not start while Tailscale serve passes on a service behind it
+    if passed & services:
+        msg = f"Tailscale serve passes port {', '.join(map(str, sorted(passed & services)))} past the door; remove it"
+        raise DoorError(msg)

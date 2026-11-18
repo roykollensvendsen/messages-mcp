@@ -2,9 +2,11 @@
 
 import asyncio
 import json
+import urllib.parse
 
 import pytest
 
+from messages_mcp import localapi
 from messages_mcp.localapi import LocalAPI, LocalAPIError
 
 
@@ -71,7 +73,70 @@ def test_the_laptops_own_addresses(tmp_path, monkeypatch):
         _ask(tmp_path, monkeypatch, _ok({"Self": {}}), lambda api: api.own_addresses())
 
 
-def test_the_ports_funnel_opens(tmp_path, monkeypatch):
-    config = {"AllowFunnel": {"made-up.example:8448": True, "made-up.example:443": False}}
-    assert _ask(tmp_path, monkeypatch, _ok(config), lambda api: api.funnel_ports()) == {8448}
-    assert _ask(tmp_path, monkeypatch, _ok({}), lambda api: api.funnel_ports()) == set()
+def test_the_ports_funnel_opens_and_the_ports_serve_passes_on(tmp_path, monkeypatch):
+    config = {
+        "AllowFunnel": {"made-up.example:8448": True, "made-up.example:443": False},
+        "TCP": {"443": {"HTTPS": True}, "9000": {"TCPForward": "127.0.0.1:2586"}},
+        "Web": {"made-up.example:443": {"Handlers": {"/": {"Proxy": "http://127.0.0.1:8008"}, "/x": {"Path": "/"}}}},
+    }
+    assert _ask(tmp_path, monkeypatch, _ok(config), lambda api: api.exposure()) == ({8448}, {2586, 8008})
+    assert _ask(tmp_path, monkeypatch, _ok({}), lambda api: api.exposure()) == (set(), set())
+    bare = {"Web": {"made-up.example:443": {"Handlers": {"/": {"Proxy": "8008"}, "/y": {"Proxy": "http://x:bad"}}}}}
+    assert _ask(tmp_path, monkeypatch, _ok(bare), lambda api: api.exposure()) == (set(), {8008})
+
+
+def test_an_answer_from_tailscaled_is_read_to_its_end_however_it_is_split(tmp_path, monkeypatch):
+    """The real tailscaled sends a big answer in several writes; the client waits for all of them."""
+    monkeypatch.chdir(tmp_path)
+    status = {"Self": {"TailscaleIPs": ["192.0.2.7"]}, "Peer": {f"made-up-{i}": {"ID": "x" * 40} for i in range(500)}}
+    body = json.dumps(status).encode()
+
+    async def split(reader, writer):
+        await reader.readuntil(b"\r\n\r\n")
+        for piece in (b"HTTP/1.0 200 OK\r\n\r\n", body[: len(body) // 2], body[len(body) // 2 :]):
+            writer.write(piece)
+            await writer.drain()
+            await asyncio.sleep(0.05)
+        writer.close()
+
+    async def scenario():
+        server = await asyncio.start_unix_server(split, "api.sock")
+        try:
+            async with asyncio.timeout(30):
+                return await LocalAPI("api.sock", 5).own_addresses()
+        finally:
+            server.close()
+
+    assert asyncio.run(scenario()) == ["192.0.2.7"]
+
+
+def test_an_answer_bigger_than_any_tailscaled_gives_is_refused(tmp_path, monkeypatch):
+    huge = _ok({"Node": {"StableID": "nFAKE0PHONE0CNTRL", "padding": "x" * (localapi.MOST + 1)}})
+    with pytest.raises(LocalAPIError, match="over"):
+        _ask(tmp_path, monkeypatch, huge, lambda api: api.whois("192.0.2.7", 1), timeout=5)
+
+
+def test_whois_names_an_ipv6_caller_in_brackets(tmp_path, monkeypatch):
+    asked = []
+    monkeypatch.chdir(tmp_path)
+
+    async def handle(reader, writer):
+        request = await reader.readuntil(b"\r\n\r\n")
+        asked.append(request.split(b" ")[1].decode())
+        writer.write(_ok({"Node": {"StableID": "nFAKE0PHONE0CNTRL"}}))
+        await writer.drain()
+        writer.close()
+
+    async def scenario():
+        server = await asyncio.start_unix_server(handle, "api.sock")
+        try:
+            api = LocalAPI("api.sock", 5)
+            await api.whois("2001:db8::7", 41641)
+            await api.whois("192.0.2.7", 41641)
+        finally:
+            server.close()
+
+    asyncio.run(scenario())
+    queries = [urllib.parse.parse_qs(urllib.parse.urlsplit(path).query)["addr"] for path in asked]
+    assert queries == [["[2001:db8::7]:41641"], ["192.0.2.7:41641"]]
+    assert "[" not in asked[0], "the address is encoded in the query"

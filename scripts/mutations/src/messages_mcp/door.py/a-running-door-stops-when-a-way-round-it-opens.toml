@@ -1,0 +1,6 @@
+[[rule]]
+name = "a running door stops when a way round it opens"
+file = "src/messages_mcp/door.py"
+find = 'await _no_way_round\(api\)'
+occurrence = 2
+replace = 'pass'

@@ -55,4 +55,4 @@ def test_the_door_with_no_tailscaled_will_not_start(own_folders, capsys):
     cert, key = _certificate(own_folders)
     (own_folders / "config.toml").write_text(f'[door]\ncert = "{cert}"\nkey = "{key}"\n')
     assert cli.main(["door"]) == 1
-    assert "matrix-door cannot start" in capsys.readouterr().err
+    assert "matrix-door cannot run" in capsys.readouterr().err

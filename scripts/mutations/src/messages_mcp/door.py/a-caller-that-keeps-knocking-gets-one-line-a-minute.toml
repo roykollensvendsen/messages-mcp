@@ -1,0 +1,5 @@
+[[rule]]
+name = "a caller that keeps knocking gets one line a minute"
+file = "src/messages_mcp/door.py"
+find = 'if last is not None and \(now - last\)'
+replace = 'if False:'
