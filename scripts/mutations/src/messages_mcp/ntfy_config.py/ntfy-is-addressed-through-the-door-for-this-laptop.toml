@@ -1,0 +1,5 @@
+[[rule]]
+name = "ntfy is addressed through the door for this laptop"
+file = "src/messages_mcp/ntfy_config.py"
+find = 'filled = \{\*\*wanted, "base-url"'
+replace = 'filled = {**wanted, "auth-file": str(users / "user.db")}'

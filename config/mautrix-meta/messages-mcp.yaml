@@ -23,9 +23,13 @@ matrix:
   delivery_receipts: false
   message_status_events: false
 
-# Leaving a room in Matrix is not passed on as leaving the group on Messenger.
+# Leaving a room in Matrix is not passed on as leaving the group on Messenger, and nobody
+# talks through the owner's account as a relay.
 bridge:
   bridge_matrix_leave: false
+  relay:
+    enabled: false
+    default_relays: []
 
 # Kept on, though typing and receipts may come this way: in encryption mode the to-device
 # events may too, and turning it off could break end-to-end encryption. Neither is measured

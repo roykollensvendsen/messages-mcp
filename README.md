@@ -137,12 +137,24 @@ Check: the connection is refused, and `~/.local/state/messages-mcp/door.log` has
 
 #### G. Paste the tailnet rule, and give the phone its push token
 
-Why: the rule is a policy in the owner's own Tailscale account, and the token is a secret.
+Why: the rule is a policy in the owner's own Tailscale account, and the phone's password is a
+secret only the owner types.
 
 Paste the prepared rule into the Tailscale admin page. It gives only the phone and the laptop
-port 8448 and ntfy's port. Install the ntfy app on the phone, and give it its token.
+port 8448 and ntfy's port. Then give the phone its own entry in ntfy, which asks for a password
+twice, and let Synapse send to the `up*` topics:
 
-Check: the ntfy app shows its topic as connected.
+```
+ntfy user --config ~/.config/ntfy/server.yml add phone
+ntfy access --config ~/.config/ntfy/server.yml phone 'up*' read-only
+ntfy access --config ~/.config/ntfy/server.yml '*' 'up*' write-only
+```
+
+Install the ntfy app on the phone. In Settings, Manage Users, Add New User, give it
+`https://<laptop>.<tailnet>.ts.net:2586`, the user `phone` and that password.
+
+Check: `ntfy access --config ~/.config/ntfy/server.yml` lists only those two entries, and the
+ntfy app shows its topic as connected.
 
 #### H. Log in to Messenger through the bridge
 
