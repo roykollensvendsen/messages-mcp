@@ -575,3 +575,35 @@ def test_a_call_with_no_byte_either_way_for_the_idle_time_is_ended(place):
     first, last, took = asyncio.run(scenario())
     assert (first, last) == (b"synapse: hello", b"")
     assert 0.2 < took < 5, took
+
+
+def test_a_held_back_count_is_written_when_its_caller_stops_knocking(tmp_path):
+    """A caller that knocks a few times and never again still gets its count, with the next line written."""
+    clock = [dt.datetime(2026, 11, 18, 12, tzinfo=dt.UTC)]
+    log = door.RefusalLog(tmp_path / "door.log", now=lambda: clock[0])
+    knocking = door.Verdict(
+        allowed=False, reason="not on the list", name="made-up-laptop", stable_id="nFAKE0OTHER0CNTRL"
+    )
+    for _ in range(3):
+        log.write(knocking)
+        clock[0] += dt.timedelta(seconds=1)
+    clock[0] += dt.timedelta(minutes=5)
+    log.write(door.Verdict(allowed=False, reason="whois failed"))
+    lines = [line.split("\t") for line in log.path.read_text().splitlines()]
+    assert [fields[3] for fields in lines] == [
+        "not on the list",
+        "not on the list (2 more after this, not written then)",
+        "whois failed",
+    ]
+    assert lines[1][2] == "nFAKE0OTHER0CNTRL"
+
+
+def test_a_held_back_count_is_written_when_the_door_stops(tmp_path):
+    clock = [dt.datetime(2026, 11, 18, 12, tzinfo=dt.UTC)]
+    log = door.RefusalLog(tmp_path / "door.log", now=lambda: clock[0])
+    for _ in range(2):
+        log.write(door.Verdict(allowed=False, reason="tagged", stable_id="nFAKE0TAGGED0ID"))
+    log.flush()
+    log.flush()
+    reasons = [line.split("\t")[3] for line in log.path.read_text().splitlines()]
+    assert reasons == ["tagged", "tagged (1 more after this, not written then)"]

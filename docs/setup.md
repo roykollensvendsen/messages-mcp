@@ -66,29 +66,48 @@ one line a minute. The door will not run while Tailscale Funnel is on for either
 Tailscale serve passes Synapse or ntfy on past it. It asks again every minute, and stops if
 either turns on.
 
+Tailscale never renews the certificate it wrote in step C, and it lasts 90 days. So a timer
+renews it each week, a month ahead, and restarts the door to serve the new one.
+
 <!-- not run: it installs the command and starts a service -->
 ```
 uv tool install --from . messages-mcp
 mkdir -p ~/.config/systemd/user
-cp systemd/matrix-door.service ~/.config/systemd/user/
+cp systemd/matrix-door.service systemd/matrix-door-cert.service systemd/matrix-door-cert.timer \
+  ~/.config/systemd/user/
 systemctl --user daemon-reload
-systemctl --user enable --now matrix-door.service
+systemctl --user enable --now matrix-door.service matrix-door-cert.timer
 ```
 
-Check: `systemctl --user is-active matrix-door.service` prints `active`.
+Check: `systemctl --user is-active matrix-door.service matrix-door-cert.timer` prints `active`
+twice. The services here and in steps 4 to 6 run with nobody logged in only when lingering is on:
+`loginctl show-user "$USER" -p Linger` must print `Linger=yes`. If it prints `Linger=no`, the
+owner turns it on with `loginctl enable-linger "$USER"`.
 
 ### 4. Set up Synapse behind the door
 
-**Not built yet:** Synapse's checked settings and its user unit come with the build's
-bridge-settings slice. Wait for owner step C.
+Wait for owner step C.
 
-Synapse listens on 127.0.0.1:8008 only, so matrix-door is the one way to it. Its settings keep
-message text out of pushes (`push.include_content: false`) and drop old messages after a while.
+Synapse listens on 127.0.0.1:8008 only, so matrix-door is the one way to it. Our settings,
+`config/synapse/messages-mcp.yaml`, are read after the ones Synapse generates and win over them:
+- a push carries no message text (`push.include_content: false`);
+- nobody sees the owner as online;
+- messages go after 30 days;
+- it talks to no other server, and nobody can sign up.
+
+`bridge.yaml` names the bridge to Synapse, and stays empty until step 6.
 
 <!-- not run: it writes Synapse's config and starts a service on the host -->
 ```
-python -m synapse.app.homeserver --server-name <laptop>.<tailnet>.ts.net \
-  --config-path ~/.local/share/synapse/homeserver.yaml --generate-config --report-stats=no
+mkdir -p ~/.local/share/synapse
+cd ~/.local/share/synapse
+python3 -m synapse.app.homeserver --server-name <laptop>.<tailnet>.ts.net \
+  --config-path homeserver.yaml --generate-config --report-stats=no
+cd -
+cp config/synapse/messages-mcp.yaml ~/.local/share/synapse/
+echo 'app_service_config_files: []' > ~/.local/share/synapse/bridge.yaml
+cp systemd/synapse.service ~/.config/systemd/user/
+systemctl --user daemon-reload
 systemctl --user enable --now synapse.service
 ```
 
@@ -96,13 +115,15 @@ Check: `curl -s http://127.0.0.1:8008/_matrix/client/versions` prints JSON with 
 
 ### 5. Start ntfy behind the door
 
-**Not built yet:** ntfy's place behind the door comes with the build's door slice, and its
-user unit with the bridge-settings slice. Wait for owner step C.
+Wait for owner step C.
 
-ntfy tells the phone that something is new. It never carries the message text.
+ntfy tells the phone that something is new. It never carries the message text. It listens on
+127.0.0.1:2586 only, behind the door, and keeps its cache in memory.
 
 <!-- not run: it starts a service on the host -->
 ```
+cp systemd/ntfy.service ~/.config/systemd/user/
+systemctl --user daemon-reload
 systemctl --user enable --now ntfy.service
 ```
 
@@ -110,14 +131,32 @@ Check: `curl -s http://127.0.0.1:2586/v1/health` prints `{"healthy":true}`.
 
 ### 6. Bridge Messenger with mautrix-meta
 
-**Not built yet:** the bridge's checked settings and its user unit come with the build's
-bridge-settings slice. Wait for owner step H.
+Wait for owner steps C and D.
 
-The bridge sends no read receipts, no presence and no typing, fetches no old messages, and logs
-at warning level only.
+The bridge generates its own config, and `messages-mcp bridge-config` merges ours into it,
+`config/mautrix-meta/messages-mcp.yaml`. It fetches no old messages and never marks the owner
+online when typing. It logs warnings only, and reports to nobody. It talks to Synapse on this
+laptop and lets only that server's users use it.
 
-<!-- not run: it starts a service on the host -->
+The bridge's config has no switch for read receipts or typing. It passes on what a Matrix
+client sends. So messages-mcp never sends them, and Element is set not to in owner step E. Owner
+step H checks whether a read still shows as seen on Messenger.
+
+<!-- not run: it writes the bridge's config and starts services on the host -->
 ```
+mkdir -p ~/.local/share/mautrix-meta
+cd ~/.local/share/mautrix-meta
+~/.local/bin/mautrix-meta -e
+cd -
+messages-mcp bridge-config config/mautrix-meta/messages-mcp.yaml ~/.local/share/mautrix-meta/config.yaml
+cd ~/.local/share/mautrix-meta
+~/.local/bin/mautrix-meta -g -c config.yaml -r registration.yaml
+cd -
+echo "app_service_config_files: [$HOME/.local/share/mautrix-meta/registration.yaml]" \
+  > ~/.local/share/synapse/bridge.yaml
+cp systemd/mautrix-meta.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user restart synapse.service
 systemctl --user enable --now mautrix-meta.service
 ```
 
@@ -186,7 +225,9 @@ Why: it installs packages and changes Tailscale on the owner's machine, with `su
 operator setting also lets the owner's user drive Tailscale without `sudo`, which widens who
 can change it.
 
-Install both with the system's package manager, as each project's install docs say. If
+Install Synapse and ntfy with the system's package manager, as each project's install docs say.
+Put mautrix-meta's binary for this laptop, from its release page, at `~/.local/bin/mautrix-meta`.
+If
 `tailscale cert` needs root for the owner's user, let it run without:
 
 ```
@@ -203,7 +244,7 @@ tailscale cert --cert-file ~/.config/messages-mcp/door.crt \
 chmod 600 ~/.config/messages-mcp/door.key
 ```
 
-Check: `command -v ntfy` prints a path, and `stat -c %a ~/.config/messages-mcp/door.key` prints
+Check: `command -v ntfy` and `ls ~/.local/bin/mautrix-meta` each print a path, and `stat -c %a ~/.config/messages-mcp/door.key` prints
 `600`.
 
 ### D. Create the Matrix user
@@ -222,9 +263,11 @@ Check: the owner can log in with it in step E.
 <!-- owner -->
 Why: it is a login, and the recovery key is a secret only the owner keeps.
 
-Log in on both, verify each against the other, and keep the recovery key somewhere safe.
+Log in on both, verify each against the other, and keep the recovery key somewhere safe. On
+both, in Settings, Preferences, turn off "Send read receipts" and "Send typing notifications".
 
-Check: in Element's sessions list, both sessions show as verified.
+Check: in Element's sessions list, both sessions show as verified, and both switches are off on
+each device.
 
 ### F. Try the door from a device that is not on the list
 
@@ -254,10 +297,13 @@ Check: the ntfy app shows its topic as connected.
 <!-- owner -->
 Why: it is a login to the owner's own account, with Messenger's encryption PIN.
 
-Install mautrix-meta from its release page, then log in to account 1 in a plain terminal.
-Account 2 follows a week later, if account 1 had no lock.
+Log in to account 1 in a plain terminal. Account 2 follows a week later, if account 1 had no
+lock.
 
-Check: the bridge's management room in Element says the account is logged in.
+Check: the bridge's management room in Element says the account is logged in. Then have a
+message sent to account 1 from another Messenger account, read it in Element on each device, and
+look at it on the sender's side. It must not show as seen. If it does, stop here and tell the
+manager: something still passes a read on to Messenger.
 
 ### I. Approve the plugin
 

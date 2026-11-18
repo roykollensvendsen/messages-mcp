@@ -81,7 +81,9 @@ Why: it installs packages and changes Tailscale on the owner's machine, with `su
 operator setting also lets the owner's user drive Tailscale without `sudo`, which widens who
 can change it.
 
-Install both with the system's package manager, as each project's install docs say. If
+Install Synapse and ntfy with the system's package manager, as each project's install docs say.
+Put mautrix-meta's binary for this laptop, from its release page, at `~/.local/bin/mautrix-meta`.
+If
 `tailscale cert` needs root for the owner's user, let it run without:
 
 ```
@@ -98,7 +100,7 @@ tailscale cert --cert-file ~/.config/messages-mcp/door.crt \
 chmod 600 ~/.config/messages-mcp/door.key
 ```
 
-Check: `command -v ntfy` prints a path, and `stat -c %a ~/.config/messages-mcp/door.key` prints
+Check: `command -v ntfy` and `ls ~/.local/bin/mautrix-meta` each print a path, and `stat -c %a ~/.config/messages-mcp/door.key` prints
 `600`.
 
 #### D. Create the Matrix user
@@ -115,9 +117,11 @@ Check: the owner can log in with it in step E.
 
 Why: it is a login, and the recovery key is a secret only the owner keeps.
 
-Log in on both, verify each against the other, and keep the recovery key somewhere safe.
+Log in on both, verify each against the other, and keep the recovery key somewhere safe. On
+both, in Settings, Preferences, turn off "Send read receipts" and "Send typing notifications".
 
-Check: in Element's sessions list, both sessions show as verified.
+Check: in Element's sessions list, both sessions show as verified, and both switches are off on
+each device.
 
 #### F. Try the door from a device that is not on the list
 
@@ -144,10 +148,13 @@ Check: the ntfy app shows its topic as connected.
 
 Why: it is a login to the owner's own account, with Messenger's encryption PIN.
 
-Install mautrix-meta from its release page, then log in to account 1 in a plain terminal.
-Account 2 follows a week later, if account 1 had no lock.
+Log in to account 1 in a plain terminal. Account 2 follows a week later, if account 1 had no
+lock.
 
-Check: the bridge's management room in Element says the account is logged in.
+Check: the bridge's management room in Element says the account is logged in. Then have a
+message sent to account 1 from another Messenger account, read it in Element on each device, and
+look at it on the sender's side. It must not show as seen. If it does, stop here and tell the
+manager: something still passes a read on to Messenger.
 
 #### I. Approve the plugin
 

@@ -1,0 +1,14 @@
+# Renews matrix-door's certificate, which Tailscale never renews by itself, then restarts the
+# door so it serves the new one. matrix-door-cert.timer runs it each week; step 3 installs both.
+[Unit]
+Description=matrix-door: renew the door's certificate a month ahead
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/messages-mcp door-cert
+ExecStartPost=systemctl --user try-restart matrix-door.service
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=%h/.config/messages-mcp

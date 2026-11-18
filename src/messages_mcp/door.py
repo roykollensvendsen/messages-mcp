@@ -115,27 +115,53 @@ class RefusalLog:
         """Write to `path`, telling the time with `now`."""
         self.path = path
         self.now = now or (lambda: dt.datetime.now(dt.UTC))
-        self._last: dict[str, tuple[dt.datetime, int]] = {}
+        self._last: dict[str, tuple[dt.datetime, int, Verdict]] = {}
 
     def write(self, verdict: Verdict) -> None:
         """Add the refusal, or count it when its caller already has a line this minute."""
         now = self.now()
         caller = verdict.stable_id or verdict.reason
-        last, between = self._last.get(caller, (None, 0))
+        last, between, _ = self._last.get(caller, (None, 0, verdict))
         # RULE: a caller that keeps knocking gets one line a minute
         if last is not None and (now - last).total_seconds() < QUIET:
-            self._last[caller] = (last, between + 1)
+            self._last[caller] = (last, between + 1, verdict)
             return
-        self._last[caller] = (now, 0)
+        # RULE: a held-back count is written when its caller stops knocking
+        lines = self._held(now, lambda when: (now - when).total_seconds() >= QUIET, caller)
+        self._last[caller] = (now, 0, verdict)
         reason = f"{verdict.reason} ({between} more before this)" if between else verdict.reason
+        self._append(now, [*lines, self._line(now, verdict, reason)])
+
+    def flush(self) -> None:
+        """Write every count still held back, as the door stops."""
+        now = self.now()
+        lines = self._held(now, lambda _when: True)
+        if lines:
+            self._append(now, lines)
+
+    def _held(self, now: dt.datetime, due: Callable[[dt.datetime], bool], but: str = "") -> list[str]:
+        """A line for each caller other than `but` whose count is due, which is then cleared."""
+        lines = []
+        for caller, (when, between, verdict) in list(self._last.items()):
+            if between and caller != but and due(when):
+                lines.append(
+                    self._line(now, verdict, f"{verdict.reason} ({between} more after this, not written then)")
+                )
+                self._last[caller] = (when, 0, verdict)
+        return lines
+
+    @staticmethod
+    def _line(now: dt.datetime, verdict: Verdict, reason: str) -> str:
         fields = [now.isoformat(timespec="seconds"), verdict.name or "-", verdict.stable_id or "-", reason]
         # RULE: a refusal is one line however its device is named
-        line = "\t".join(re.sub(r"\s+", " ", field).strip() or "-" for field in fields) + "\n"
-        kept = [old for old in self._lines() if self._young(old, now)][-(KEEP_LINES - 1) :]
+        return "\t".join(re.sub(r"\s+", " ", field).strip() or "-" for field in fields) + "\n"
+
+    def _append(self, now: dt.datetime, lines: list[str]) -> None:
+        kept = [old for old in self._lines() if self._young(old, now)]
         self.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         fd = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w", encoding="utf-8") as out:
-            out.writelines([*kept, line])
+            out.writelines([*kept, *lines][-KEEP_LINES:])
 
     def _lines(self) -> list[str]:
         try:

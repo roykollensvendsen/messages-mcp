@@ -1,0 +1,64 @@
+# messages-mcp's settings for mautrix-meta, merged into the config the bridge generates by
+# `messages-mcp bridge-config` (docs/setup.md, step 6); each key here wins. Every key below is
+# one that mautrix/go's bridgev2 example-config.yaml or mautrix/meta's own example-config.yaml
+# has. The same command sets homeserver.domain to the laptop's tailnet name, and lets only that
+# server's users use the bridge. tests/test_bridge_config.py holds every value here.
+#
+# What this cannot do: neither file has a switch for read receipts or typing toward Messenger.
+# The bridge passes on only what a Matrix client sends, so those are stopped at the source:
+# messages-mcp's own client never sends them, and Element is set not to (owner step E).
+
+# No old history is pulled in: only messages from the day of login on.
+backfill:
+  enabled: false
+  max_initial_messages: 0
+  max_catchup_messages: 0
+  threads:
+    max_initial_messages: 0
+  queue:
+    enabled: false
+
+# The bridge's own receipts and status events stay off, so nothing extra is written to Matrix.
+matrix:
+  delivery_receipts: false
+  message_status_events: false
+
+# Leaving a room in Matrix is not passed on as leaving the group on Messenger.
+bridge:
+  bridge_matrix_leave: false
+
+# Kept on, though typing and receipts may come this way: in encryption mode the to-device
+# events may too, and turning it off could break end-to-end encryption. Neither is measured
+# yet [guess]; a later test with a decoy account settles it.
+appservice:
+  ephemeral_events: true
+  # It listens on this laptop only, for Synapse.
+  hostname: 127.0.0.1
+
+# Warnings and errors only, so no message text reaches the bridge's log.
+logging:
+  min_level: warn
+
+# No tracking, and no status pushed to any outside address.
+analytics:
+  token: null
+
+# Synapse on this laptop, and no status pushed to any outside address.
+homeserver:
+  address: http://127.0.0.1:8008
+  status_endpoint: null
+  message_send_checkpoint_endpoint: null
+
+# The bridge's own database, a file in its folder.
+database:
+  type: sqlite3-fk-wal
+  uri: file:mautrix-meta.db?_txlock=immediate
+
+# mautrix-meta's own keys, which the bridge keeps under network:.
+network:
+  # Never marks the owner online on Messenger when typing.
+  send_presence_on_typing: false
+  # No encrypted history pulled in, and no sent messages uploaded to it.
+  e2ee_backfill: false
+  thread_backfill:
+    batch_count: 0

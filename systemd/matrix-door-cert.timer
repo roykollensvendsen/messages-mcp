@@ -1,0 +1,11 @@
+# Each week, and at the next start after a week the laptop was off, renew the door's certificate.
+[Unit]
+Description=matrix-door: renew the door's certificate each week
+
+[Timer]
+OnCalendar=weekly
+Persistent=true
+RandomizedDelaySec=1h
+
+[Install]
+WantedBy=timers.target

@@ -1,5 +1,5 @@
 [[rule]]
 name = "a device list that is a link is refused"
 file = "src/messages_mcp/door_list.py"
-find = 'if stat\.S_ISLNK\(found\.st_mode\):'
+find = 'if broken\.errno == errno\.ELOOP:'
 replace = 'if False:'

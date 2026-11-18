@@ -1,0 +1,5 @@
+[[rule]]
+name = "our settings win over the ones the bridge made"
+file = "src/messages_mcp/bridge_config.py"
+find = '^ {12}out\[key\] = value'
+replace = 'pass'

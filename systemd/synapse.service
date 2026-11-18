@@ -1,0 +1,21 @@
+# Synapse, the Matrix inbox, as a systemd user unit. docs/setup.md, step 4, installs it.
+# It listens on 127.0.0.1:8008 only (config/synapse/messages-mcp.yaml), so matrix-door is the
+# one way in. Synapse lets each later file's top-level keys replace the earlier one's.
+[Unit]
+Description=Synapse: the Matrix inbox, on this laptop only
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=%h/.local/share/synapse
+ExecStart=python3 -m synapse.app.homeserver -c %h/.local/share/synapse/homeserver.yaml -c %h/.local/share/synapse/messages-mcp.yaml -c %h/.local/share/synapse/bridge.yaml
+Restart=on-failure
+RestartSec=10
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=%h/.local/share/synapse
+
+[Install]
+WantedBy=default.target

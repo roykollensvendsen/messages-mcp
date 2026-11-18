@@ -1,0 +1,5 @@
+[[rule]]
+name = "the door key is readable by the owner only"
+file = "src/messages_mcp/door_cert.py"
+find = 'key\.chmod\(0o600\)'
+replace = 'pass'

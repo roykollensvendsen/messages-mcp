@@ -79,6 +79,15 @@ class LocalAPI:
             raise LocalAPIError(msg)
         return [str(a) for a in addresses]
 
+    async def own_name(self) -> str:
+        """The laptop's own name on the tailnet, as its certificate names it."""
+        answer = await self.get("/localapi/v0/status")
+        name = answer.get("Self", {}).get("DNSName") if isinstance(answer, dict) else None
+        if not isinstance(name, str) or not name.rstrip("."):
+            msg = "status gave no tailnet name for this laptop"
+            raise LocalAPIError(msg)
+        return name.rstrip(".")
+
     async def exposure(self) -> tuple[set[int], set[int]]:
         """The ports Funnel opens to the internet, and the local ports Tailscale serve passes on."""
         answer = await self.get("/localapi/v0/serve-config")

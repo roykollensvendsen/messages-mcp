@@ -1,0 +1,21 @@
+# mautrix-meta, the bridge to Messenger, as a systemd user unit. docs/setup.md, step 6,
+# installs it, after `messages-mcp bridge-config` has put our settings into its config.
+[Unit]
+Description=mautrix-meta: the bridge between Messenger and the Matrix inbox
+After=network-online.target synapse.service
+Wants=network-online.target
+Requires=synapse.service
+
+[Service]
+WorkingDirectory=%h/.local/share/mautrix-meta
+ExecStart=%h/.local/bin/mautrix-meta -c config.yaml -r registration.yaml
+Restart=on-failure
+RestartSec=30
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=%h/.local/share/mautrix-meta
+
+[Install]
+WantedBy=default.target
