@@ -15,6 +15,7 @@ import importlib.util
 import json
 import os
 import pathlib
+import re
 import subprocess
 
 import pytest
@@ -253,3 +254,41 @@ def test_a_row_that_breaks_the_code_is_named_and_runs_nothing(mutate):
     assert mutate.broken("scripts/x.py", "def f(:\n") is not None
     assert mutate.broken("scripts/x.py", "x = 1\n") is None
     assert mutate.broken("README.md", "def f(:\n") is None
+
+
+class _Pipe:
+    """Output that, like a pipe in CI, shows only what has been flushed."""
+
+    def __init__(self):
+        self.held, self.shown = "", ""
+
+    def write(self, text):
+        self.held += text
+        return len(text)
+
+    def flush(self):
+        self.shown, self.held = self.shown + self.held, ""
+
+
+def test_a_mutation_run_names_each_rule_before_it_tests_it(tmp_path, monkeypatch, mutate):
+    """The name must be out of the process, not in its buffer, by the time the suite starts.
+
+    In CI the output is a pipe, which Python holds back until it is full. A run that hung on
+    one rule left nothing in the log to say which, and its result line has to get out as well.
+    """
+    root = _repository(tmp_path, marked=False)
+    monkeypatch.setattr(mutate, "ROOT", root)
+    monkeypatch.setattr(mutate, "RECOVERY", root / "scripts/.mutate-recovery.json")
+    monkeypatch.setattr(mutate, "files_naming", lambda _test: [])
+    pipe, seen = _Pipe(), []
+    monkeypatch.setattr(mutate.sys, "stdout", pipe)
+
+    def suite(_targets, _place):
+        seen.append(pipe.shown)
+        return 1, ["test_x_is_one"]
+
+    monkeypatch.setattr(mutate, "run_suite", suite)
+    rule = {"name": "x is one", "file": "src/pkg/core.py", "find": "^x = 1$", "replace": "x = 2"}
+    mutate.mutate_one(rule, tmp_path, [])
+    assert "testing  x is one\n" in seen[0]
+    assert re.search(r"KILLED   x is one: 1 in \d+ s\n", pipe.shown), pipe.shown
