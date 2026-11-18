@@ -6,6 +6,7 @@ import shutil
 import subprocess
 
 import pytest
+from bounded import run_bounded
 
 ROOT = pathlib.Path(__file__).parent.parent
 SCRIPTS = ("imperative.py", "no_session_links.py", "private_data_scan.py", "readable.py")
@@ -30,7 +31,7 @@ def repo(tmp_path):
 
 def _commit(repo, message):
     folder, env = repo
-    return subprocess.run(
+    return run_bounded(
         ["git", "commit", "-q", "--allow-empty", "-m", message], cwd=folder, env=env, capture_output=True, text=True
     )
 

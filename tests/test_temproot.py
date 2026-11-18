@@ -18,6 +18,7 @@ ROOT = pathlib.Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import temproot
+from bounded import line_within
 
 #: Starts a run's folder in the parent given, says where, and waits to be stopped.
 HOLDER = """
@@ -35,7 +36,7 @@ with temproot.run_folder(pathlib.Path(sys.argv[1])) as folder:
 def _holder(parent):
     script = HOLDER.format(scripts=str(ROOT / "scripts"))
     child = subprocess.Popen([sys.executable, "-c", script, str(parent)], stdout=subprocess.PIPE, text=True)
-    folder = pathlib.Path(child.stdout.readline().strip())
+    folder = pathlib.Path(line_within(child.stdout, 30).strip())
     assert folder.is_dir()
     return child, folder
 
@@ -106,7 +107,7 @@ def test_a_second_stop_does_not_cut_the_cleanup_short(tmp_path):
     parent = tmp_path / "runs"
     script = SLOW_CLEANUP.format(scripts=str(ROOT / "scripts"))
     child = subprocess.Popen([sys.executable, "-c", script, str(parent)], stdout=subprocess.PIPE, text=True)
-    folder = pathlib.Path(child.stdout.readline().strip())
+    folder = pathlib.Path(line_within(child.stdout, 30).strip())
     child.send_signal(signal.SIGINT)
     deadline = time.monotonic() + 30
     while not (tmp_path / "cleaning").exists() and time.monotonic() < deadline:

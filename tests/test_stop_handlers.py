@@ -8,9 +8,9 @@ them, and fail for a reason that is not its own: the mutation check reports that
 
 import os
 import shutil
-import subprocess
 import sys
 
+from bounded import run_bounded
 from conftest import ROOT
 
 #: The first test changes all three handlers and never puts them back; the second checks them.
@@ -41,7 +41,7 @@ def test_a_test_s_stop_handlers_are_gone_before_the_next_test(tmp_path):
     base = tmp_path / "tmp"
     base.mkdir()
     env = {k: v for k, v in os.environ.items() if k != "MESSAGES_MCP_TEST_ROOT"} | {"TMPDIR": str(base)}
-    done = subprocess.run(
+    done = run_bounded(
         [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "--rootdir", str(project), "tests"],
         cwd=project,
         env=env,
