@@ -17,7 +17,7 @@ from messages_mcp.sent_log import SentLog
 AT = dt.datetime(2026, 11, 18, 13, 2, tzinfo=dt.UTC)
 
 
-def _outbox(tmp_path, *, delay=10.0, sender=None, limits=None, sleep=None):
+def _outbox(tmp_path, *, delay=10.0, sender=None, limits=None, sleep=None, send_wait=30.0):  # noqa: PLR0913
     """An outbox whose sleep waits on an event the test sets, so the timer fires only when told."""
     drafts = Drafts(clock=lambda: 0.0)
     sender = sender or FakeSender()
@@ -34,8 +34,23 @@ def _outbox(tmp_path, *, delay=10.0, sender=None, limits=None, sleep=None):
         delay=delay,
         now=lambda: AT,
         sleep=sleep or wait,
+        send_wait=send_wait,
     )
     return box, drafts, sender, fire
+
+
+class _Slow(FakeSender):
+    """A sender that starts and then waits until the test lets it finish."""
+
+    def __init__(self):
+        super().__init__()
+        self.started = asyncio.Event()
+        self.finish = asyncio.Event()
+
+    async def send(self, receiver, room, text):
+        self.started.set()
+        await self.finish.wait()
+        await super().send(receiver, room, text)
 
 
 def _draft(drafts, text="Made-up text", room="!made-up:made-up"):
@@ -261,17 +276,6 @@ def test_a_stop_after_a_failed_send_says_nothing_was_sent(tmp_path):
 
 
 def test_a_stop_while_it_is_being_sent_is_too_late(tmp_path):
-    class _Slow(FakeSender):
-        def __init__(self):
-            super().__init__()
-            self.started = asyncio.Event()
-            self.finish = asyncio.Event()
-
-        async def send(self, receiver, room, text):
-            self.started.set()
-            await self.finish.wait()
-            await super().send(receiver, room, text)
-
     async def scenario():
         sender = _Slow()
         box, drafts, _, fire = _outbox(tmp_path, sender=sender)
@@ -309,3 +313,70 @@ def test_a_clean_start_has_no_news(tmp_path):
         return box.news()
 
     assert asyncio.run(scenario()) == []
+
+
+def test_a_message_being_sent_when_messages_mcp_stops_is_never_said_to_be_unsent(tmp_path):
+    """A stop during the send cannot know whether it went, so the next start says so; never "not sent"."""
+
+    async def before():
+        sender = _Slow()
+        box, drafts, _, fire = _outbox(tmp_path, sender=sender, send_wait=0.01)
+        draft = _draft(drafts)
+        await box.confirm(draft.token, draft.version)
+        fire.set()
+        await sender.started.wait()
+        await box.close()  # the send never finishes within the wait
+
+    asyncio.run(before())
+
+    async def after():
+        box, _, _, _ = _outbox(tmp_path)
+        box.start()
+        return box.news()
+
+    news = asyncio.run(after())
+    assert news == ["A message may or may not have gone when messages-mcp stopped; check the chat."]
+    assert not any("not sent" in item for item in news)
+    assert '"dropped"' not in (tmp_path / "sent.jsonl").read_text()
+
+
+def test_a_stop_of_messages_mcp_waits_for_a_send_already_going(tmp_path):
+    async def scenario():
+        sender = _Slow()
+        box, drafts, _, fire = _outbox(tmp_path, sender=sender)
+        draft = _draft(drafts)
+        await box.confirm(draft.token, draft.version)
+        fire.set()
+        await sender.started.wait()
+        closing = asyncio.create_task(box.close())
+        await asyncio.sleep(0)
+        sender.finish.set()
+        await closing
+        return box.news(), sender.sent
+
+    news, sent = asyncio.run(scenario())
+    assert len(sent) == 1
+    assert news == ["Sent to “Made-up Friend” at 13.02."]
+
+    async def after():
+        box, _, _, _ = _outbox(tmp_path)
+        box.start()
+        return box.news()
+
+    assert asyncio.run(after()) == []
+
+
+def test_several_cut_off_sends_are_counted_in_one_line(tmp_path):
+    log = SentLog(tmp_path / "sent.jsonl", clock=lambda: 1_800_000_000.0)
+    for ident in ("made-up-1", "made-up-2"):
+        log.write(ident, None, "!a:made-up", 3, "held")
+        log.write(ident, None, "!a:made-up", 3, "sending")
+
+    async def scenario():
+        box, _, _, _ = _outbox(tmp_path)
+        box.start()
+        return box.news()
+
+    assert asyncio.run(scenario()) == [
+        "2 messages may or may not have gone when messages-mcp stopped; check the chats."
+    ]

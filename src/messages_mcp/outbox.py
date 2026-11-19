@@ -4,6 +4,8 @@ messages-v1 §8, pinned in code:
 - confirm names the version that was read back, and a draft is confirmed once;
 - the held message lives only in this process's memory, so a stop of messages-mcp cancels it,
   and the next start says a held message was dropped, never sending it later;
+- a send already going when messages-mcp stops is waited for, for a while; one cut off is
+  said at the next start as may or may not have gone, never as not sent;
 - the timer and cancel take one lock, so each send ends in exactly one outcome;
 - what goes is the stored draft's text, never anything from the confirm call.
 Nothing here talks to Matrix: it sends through a `Sender`, and only a fake one exists so far.
@@ -26,6 +28,9 @@ if TYPE_CHECKING:
     from messages_mcp.sent_log import SentLog
 
 DROPPED = "A held message was dropped when messages-mcp stopped; it was not sent."
+UNKNOWN = "A message may or may not have gone when messages-mcp stopped; check the chat."
+#: Seconds a stop of messages-mcp waits for a send already going before it cuts it off.
+SEND_WAIT = 30.0
 
 
 class Sender(Protocol):
@@ -61,6 +66,7 @@ class Outbox:
         now: Callable[[], dt.datetime] | None = None,
         sleep: Callable[[float], Awaitable[Any]] = asyncio.sleep,
         label: Callable[[str], str | None] = lambda _receiver: None,
+        send_wait: float = SEND_WAIT,
     ) -> None:
         """Hold confirmed `drafts` for `delay` seconds, then send them with `sender`."""
         self._drafts = drafts
@@ -71,17 +77,24 @@ class Outbox:
         self._now = now or (lambda: dt.datetime.now().astimezone())
         self._sleep = sleep
         self._label = label
+        self._send_wait = send_wait
         self._lock = asyncio.Lock()
         self._held: dict[str, Held] = {}
         self._news: list[str] = []
 
     def start(self) -> None:
-        """At start: any send held when messages-mcp last stopped was dropped; say so once."""
-        dropped = self._log.drop_unfinished()
+        """At start: say once what became of the sends messages-mcp was in the middle of when it stopped."""
+        dropped, unknown = self._log.drop_unfinished()
         if dropped == 1:
             self._news.append(DROPPED)
         elif dropped:
             self._news.append(f"{dropped} held messages were dropped when messages-mcp stopped; none was sent.")
+        if unknown == 1:
+            self._news.append(UNKNOWN)
+        elif unknown:
+            self._news.append(
+                f"{unknown} messages may or may not have gone when messages-mcp stopped; check the chats."
+            )
 
     async def confirm(self, token: str, version: int) -> dict[str, Any]:
         """Hold the draft `token` names, if `version` is the one read back, for the undo delay."""
@@ -128,6 +141,8 @@ class Outbox:
             if held.state != "held":
                 return
             held.state = "sending"
+            # RULE: a message being sent when messages-mcp stops is never said to be unsent
+            self._write(held, "sending")
         try:
             # RULE: when the delay runs out the stored text is sent
             await self._sender.send(held.draft.receiver, held.draft.room, held.draft.text)
@@ -160,8 +175,17 @@ class Outbox:
         await asyncio.gather(*(h.task for h in self._held.values() if h.task), return_exceptions=True)
 
     async def close(self) -> None:
-        """Stop every timer, as a stop of messages-mcp does: nothing held is sent."""
-        tasks = [h.task for h in self._held.values() if h.task and not h.task.done()]
+        """Stop every timer, as a stop of messages-mcp does: nothing held is sent.
+
+        A send already going is waited for, up to the send wait, and only then cut off: its
+        log then ends at sending, which the next start says may or may not have gone.
+        """
+        live = [h for h in self._held.values() if h.task and not h.task.done()]
+        # RULE: a stop of messages-mcp waits for a send already going
+        going = [h.task for h in live if h.state == "sending" and h.task]
+        if going:
+            await asyncio.wait(going, timeout=self._send_wait)
+        tasks = [h.task for h in live if h.task and not h.task.done()]
         for task in tasks:
             task.cancel()
         for task in tasks:
