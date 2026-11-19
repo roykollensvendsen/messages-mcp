@@ -441,7 +441,9 @@ def report(results: list[Result], survived: list[str], lucky: list[str], bad_row
     proven = len(results) - len(survived) - len(lucky)
     verdict = (
         f"**Result: {proven} of {len(results)} rules turned off the test that names them.**"
-        + (" None survived." if not survived else f" Survived: {', '.join(survived)}.")
+        # A broken row was never tested, so "none survived" would claim more than the run knows.
+        + ("" if survived or bad_rows else " None survived.")
+        + ("" if not survived else f" Survived: {', '.join(survived)}.")
         + ("" if not lucky else f" Killed only by other tests: {', '.join(lucky)}.")
         # RULE: a broken row is named in the written report
         + ("" if not bad_rows else f" Broken rows, so nothing was tested: {', '.join(bad_rows)}.")
