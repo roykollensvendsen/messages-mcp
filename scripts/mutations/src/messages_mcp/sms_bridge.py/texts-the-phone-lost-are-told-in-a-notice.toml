@@ -1,0 +1,5 @@
+[[rule]]
+name = "texts the phone lost are told in a notice"
+file = "src/messages_mcp/sms_bridge.py"
+find = '^\s*if got\.dropped:$'
+replace = 'if False:'

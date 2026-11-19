@@ -141,6 +141,8 @@ MAY_SLEEP = {
     ("door.py", "_watch"),
     # The outbox's undo hold waits the delay after the owner says "send", never during a start.
     ("outbox.py", "__init__"),
+    # sms-bridge waits between polls of the phone, in its own loop, never in messages-mcp's start.
+    ("sms_bridge.py", "run"),
 }
 
 

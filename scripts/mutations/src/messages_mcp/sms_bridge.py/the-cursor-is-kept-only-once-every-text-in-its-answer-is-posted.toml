@@ -1,0 +1,5 @@
+[[rule]]
+name = "the cursor is kept only once every text in its answer is posted"
+file = "src/messages_mcp/sms_bridge.py"
+find = '^\s*self\._save\(self\._cursor\)$'
+replace = 'self._save(got.cursor)'

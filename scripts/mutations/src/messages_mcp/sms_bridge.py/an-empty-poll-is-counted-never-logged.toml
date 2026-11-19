@@ -1,0 +1,5 @@
+[[rule]]
+name = "an empty poll is counted never logged"
+file = "src/messages_mcp/sms_bridge.py"
+find = '^\s*if posted or got\.dropped or got\.reset:$'
+replace = 'if True:'
