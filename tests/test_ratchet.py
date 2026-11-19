@@ -336,24 +336,21 @@ def test_a_measured_base_leaves_no_copy_behind(tmp_path, monkeypatch):
     assert not (tmp_path / "ratchet-tmp").exists()
 
 
-#: Stands in for the mutation run: marks that it started, and on Ctrl-C takes a second to put
-#: its switched-off line back. A second Ctrl-C during that second is counted, as it would cut a
-#: real cleanup short.
+#: Stands in for the mutation run: marks that it started, and on a stop takes a second to put
+#: its switched-off line back, then marks who sent the stop and whether another came meanwhile.
+#: SIGINT is blocked and each stop taken with sigtimedwait, which names its sender. Two SIGINTs
+#: that arrive together may merge into one, but the first to arrive is never lost: a group-wide
+#: stop comes from the ratchet itself, before the parent passes its own on.
 MUTATION_RUN = """
-import pathlib, signal, sys, time
+import os, pathlib, signal, sys, time
 mark = pathlib.Path(sys.argv[1])
-heard = []
-def stop(signum, frame):
-    heard.append(signum)
-    if len(heard) == 1:
-        raise KeyboardInterrupt
-signal.signal(signal.SIGINT, stop)
+signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGINT})
 mark.write_text("started")
-try:
-    time.sleep(60)
-except KeyboardInterrupt:
-    time.sleep(1)
-    mark.write_text(f"put back after {len(heard)} stop")
+first = signal.sigtimedwait({signal.SIGINT}, 60)
+time.sleep(1)
+again = signal.sigtimedwait({signal.SIGINT}, 0)
+sender = "its parent" if first and first.si_pid == os.getppid() else "elsewhere"
+mark.write_text(f"put back after a stop from {sender}, and {'another' if again else 'no other'}")
 """
 
 #: Stands in for uv between the ratchet and the mutation run: like uv, it passes a Ctrl-C on to
@@ -364,6 +361,9 @@ child = subprocess.Popen([sys.executable, "-c", sys.argv[1], sys.argv[2]])
 signal.signal(signal.SIGINT, lambda *_: child.send_signal(signal.SIGINT))
 sys.exit(child.wait())
 """
+
+#: What the mutation run marks when only its parent passed it the stop, once.
+ONE_STOP = "put back after a stop from its parent, and no other"
 
 #: Stands in for the ratchet: the real stop handling, and the real way it runs a step.
 STOPPED_RATCHET = """
@@ -402,7 +402,7 @@ def test_a_stopped_ratchet_lets_its_mutation_run_put_the_line_back(tmp_path):
     """
     mark = tmp_path / "mark"
     said = _stop_the_ratchet_mid_step(mark, sys.executable, "-c", LAUNCHER, MUTATION_RUN, str(mark))
-    assert mark.read_text() == "put back after 1 stop"
+    assert mark.read_text() == ONE_STOP
     assert "kill -9 -- -" in said
 
 
@@ -414,7 +414,7 @@ def test_a_stop_reaches_the_step_s_own_python_once_through_a_real_uv(tmp_path):
     _stop_the_ratchet_mid_step(
         mark, uv, "run", "--no-project", "--python", sys.executable, "python", "-c", MUTATION_RUN, str(mark)
     )
-    assert mark.read_text() == "put back after 1 stop"
+    assert mark.read_text() == ONE_STOP
 
 
 def test_a_quality_step_hears_terminal_stops_only_through_the_ratchet():
