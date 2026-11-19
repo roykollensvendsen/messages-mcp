@@ -1,7 +1,7 @@
 """sent.jsonl: what the voice sent, with no text and no names (v3.1 §8).
 
 One line per step: when, an id for the send, the account's label, a hash of the room, the
-text's length, and the outcome (held, sent, cancelled, failed or dropped). It answers "did it
+text's length, and the outcome (held, sending, sent, cancelled, failed, dropped or unknown). It answers "did it
 go?" and "how many today?" without holding the content. Kept 90 days, readable by the owner only.
 """
 
@@ -12,7 +12,7 @@ import hashlib
 import json
 import os
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from messages_mcp.bridge_config import write_private
 
@@ -21,8 +21,9 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 KEEP_DAYS = 90
-#: The outcomes that end a send; a held one with none of these after it was dropped.
-FINAL = {"sent", "cancelled", "failed", "dropped"}
+#: The outcomes that end a send. A held one with none of these after it was dropped; one
+#: that had started sending may have gone, so it is unknown.
+FINAL = {"sent", "cancelled", "failed", "dropped", "unknown"}
 
 
 class SentLog:
@@ -49,18 +50,31 @@ class SentLog:
         with os.fdopen(fd, "a", encoding="utf-8") as out:
             out.write(json.dumps(line) + "\n")
 
-    def drop_unfinished(self) -> int:
-        """At start: mark every held send with no outcome as dropped, keep 90 days; how many were dropped."""
+    def drop_unfinished(self) -> tuple[int, int]:
+        """At start: end every send with no outcome, keep 90 days; how many were dropped, and how many unknown.
+
+        A send that never started was dropped. One that had started may have reached the server,
+        so it is unknown: saying it was not sent could be false.
+        """
         try:
             lines = [json.loads(text) for text in self.path.read_text(encoding="utf-8").splitlines() if text]
         except FileNotFoundError:
-            return 0
+            return 0, 0
         oldest = dt.datetime.fromtimestamp(self._clock(), dt.UTC) - dt.timedelta(days=KEEP_DAYS)
         # RULE: lines older than ninety days are dropped
         kept = [line for line in lines if dt.datetime.fromisoformat(line["at"]) >= oldest]
-        ended = {line["id"] for line in kept if line["outcome"] in FINAL}
-        held = [line for line in kept if line["outcome"] == "held" and line["id"] not in ended]
+        held, started = _unfinished(kept)
         at = dt.datetime.fromtimestamp(self._clock(), dt.UTC).isoformat(timespec="seconds")
         kept += [{**line, "at": at, "outcome": "dropped"} for line in held]
+        # RULE: a send cut off mid way is unknown never dropped
+        kept += [{**line, "at": at, "outcome": "unknown"} for line in started.values()]
         write_private(self.path, "".join(json.dumps(line) + "\n" for line in kept))
-        return len(held)
+        return len(held), len(started)
+
+
+def _unfinished(lines: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
+    """The sends with no outcome: those still held, and those that had started sending, by id."""
+    ended = {line["id"] for line in lines if line["outcome"] in FINAL}
+    started = {line["id"]: line for line in lines if line["outcome"] == "sending" and line["id"] not in ended}
+    held = [line for line in lines if line["outcome"] == "held" and line["id"] not in ended | set(started)]
+    return held, started

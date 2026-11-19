@@ -1,0 +1,5 @@
+[[rule]]
+name = "a stop of messages-mcp waits for a send already going"
+file = "src/messages_mcp/outbox.py"
+find = '^\s+going = \['
+replace = "going = []"

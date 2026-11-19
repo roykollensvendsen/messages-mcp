@@ -1,0 +1,5 @@
+[[rule]]
+name = "a message being sent when messages-mcp stops is never said to be unsent"
+file = "src/messages_mcp/outbox.py"
+find = '^\s+self\._write\(held, "sending"\)$'
+replace = "pass"

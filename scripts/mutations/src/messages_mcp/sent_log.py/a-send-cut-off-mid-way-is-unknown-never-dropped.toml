@@ -1,0 +1,5 @@
+[[rule]]
+name = "a send cut off mid way is unknown never dropped"
+file = "src/messages_mcp/sent_log.py"
+find = '^\s+kept \+= \[\{\*\*line, "at": at, "outcome": "unknown"\}'
+replace = "pass"

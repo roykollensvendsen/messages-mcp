@@ -43,9 +43,9 @@ def test_a_held_message_with_no_outcome_is_dropped_on_restart(tmp_path):
     before.write("made-up-1", None, "!r:made-up", 5, "held")
     before.write("made-up-1", None, "!r:made-up", 5, "sent")
     before.write("made-up-2", None, "!r:made-up", 5, "held")
-    assert SentLog(path, clock=clock).drop_unfinished() == 1
+    assert SentLog(path, clock=clock).drop_unfinished() == (1, 0)
     assert [(line["id"], line["outcome"]) for line in _lines(path)][-1] == ("made-up-2", "dropped")
-    assert SentLog(path, clock=clock).drop_unfinished() == 0
+    assert SentLog(path, clock=clock).drop_unfinished() == (0, 0)
 
 
 def test_lines_older_than_ninety_days_are_dropped(tmp_path):
@@ -60,4 +60,18 @@ def test_lines_older_than_ninety_days_are_dropped(tmp_path):
 
 
 def test_a_missing_log_is_an_empty_one(tmp_path):
-    assert SentLog(tmp_path / "none" / "sent.jsonl", clock=_Clock()).drop_unfinished() == 0
+    assert SentLog(tmp_path / "none" / "sent.jsonl", clock=_Clock()).drop_unfinished() == (0, 0)
+
+
+def test_a_send_cut_off_mid_way_is_unknown_never_dropped(tmp_path):
+    """A send that had started may have reached the server: saying it was not sent could be false."""
+    path = tmp_path / "sent.jsonl"
+    clock = _Clock()
+    before = SentLog(path, clock=clock)
+    before.write("made-up-1", None, "!r:made-up", 5, "held")
+    before.write("made-up-1", None, "!r:made-up", 5, "sending")
+    assert SentLog(path, clock=clock).drop_unfinished() == (0, 1)
+    outcomes = [line["outcome"] for line in _lines(path)]
+    assert outcomes[-1] == "unknown"
+    assert "dropped" not in outcomes
+    assert SentLog(path, clock=clock).drop_unfinished() == (0, 0)
