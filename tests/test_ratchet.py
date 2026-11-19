@@ -9,6 +9,7 @@ import importlib.util
 import json
 import os
 import pathlib
+import shutil
 import signal
 import subprocess
 import sys
@@ -335,29 +336,33 @@ def test_a_measured_base_leaves_no_copy_behind(tmp_path, monkeypatch):
     assert not (tmp_path / "ratchet-tmp").exists()
 
 
-#: Stands in for the mutation run: marks that it started, and on Ctrl-C takes a second to
-#: put its switched-off line back, then marks that.
+#: Stands in for the mutation run: marks that it started, and on Ctrl-C takes a second to put
+#: its switched-off line back. A second Ctrl-C during that second is counted, as it would cut a
+#: real cleanup short.
 MUTATION_RUN = """
-import pathlib, sys, time
+import pathlib, signal, sys, time
 mark = pathlib.Path(sys.argv[1])
+heard = []
+def stop(signum, frame):
+    heard.append(signum)
+    if len(heard) == 1:
+        raise KeyboardInterrupt
+signal.signal(signal.SIGINT, stop)
 mark.write_text("started")
 try:
     time.sleep(60)
-finally:
+except KeyboardInterrupt:
     time.sleep(1)
-    mark.write_text("put-back")
+    mark.write_text(f"put back after {len(heard)} stop")
 """
 
-#: Stands in for uv between the ratchet and the mutation run: it waits for its child through
-#: any Ctrl-C and passes none on, so the child hears a stop only if its whole session is told.
+#: Stands in for uv between the ratchet and the mutation run: like uv, it passes a Ctrl-C on to
+#: its child, once, and waits for it.
 LAUNCHER = """
-import subprocess, sys
+import signal, subprocess, sys
 child = subprocess.Popen([sys.executable, "-c", sys.argv[1], sys.argv[2]])
-while True:
-    try:
-        sys.exit(child.wait())
-    except KeyboardInterrupt:
-        pass
+signal.signal(signal.SIGINT, lambda *_: child.send_signal(signal.SIGINT))
+sys.exit(child.wait())
 """
 
 #: Stands in for the ratchet: the real stop handling, and the real way it runs a step.
@@ -367,19 +372,14 @@ spec = importlib.util.spec_from_file_location("ratchet", sys.argv[1])
 ratchet = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(ratchet)
 ratchet.temproot.exit_on_signals()
-ratchet._run(sys.executable, "-c", sys.argv[2], sys.argv[3], sys.argv[4])
+ratchet._run(*sys.argv[2:])
 """
 
 
-def test_a_stopped_ratchet_lets_its_mutation_run_put_the_line_back(tmp_path):
-    """The step's whole session gets Ctrl-C, and as long as it needs: killed, a rule stays switched off.
-
-    The mutation run sits below a launcher, as below uv, so it hears the stop only when the
-    whole session is told. The ratchet names the command that ends a step that hangs even so.
-    """
-    mark = tmp_path / "mark"
+def _stop_the_ratchet_mid_step(mark, *step):
+    """Start the real ratchet running `step`, stop it once it has started, and say what it printed."""
     ratchet_run = subprocess.Popen(
-        [sys.executable, "-c", STOPPED_RATCHET, str(ROOT / "scripts/ratchet.py"), LAUNCHER, MUTATION_RUN, str(mark)],
+        [sys.executable, "-c", STOPPED_RATCHET, str(ROOT / "scripts/ratchet.py"), *step],
         stderr=subprocess.PIPE,
         text=True,
     )
@@ -389,8 +389,32 @@ def test_a_stopped_ratchet_lets_its_mutation_run_put_the_line_back(tmp_path):
     ratchet_run.send_signal(signal.SIGTERM)
     _, said = ratchet_run.communicate(timeout=30)
     assert ratchet_run.returncode == 143
-    assert mark.read_text() == "put-back"
+    return said
+
+
+def test_a_stopped_ratchet_lets_its_mutation_run_put_the_line_back(tmp_path):
+    """The step alone gets Ctrl-C, once, and as long as it needs: killed, a rule stays switched off.
+
+    The mutation run sits below a launcher that passes Ctrl-C on, as uv does. A stop sent to the
+    step's whole group reached the mutation run twice, once directly and once through the
+    launcher, and the second cut its cleanup short. The ratchet names the command that ends a
+    step that hangs even so.
+    """
+    mark = tmp_path / "mark"
+    said = _stop_the_ratchet_mid_step(mark, sys.executable, "-c", LAUNCHER, MUTATION_RUN, str(mark))
+    assert mark.read_text() == "put back after 1 stop"
     assert "kill -9 -- -" in said
+
+
+def test_a_stop_reaches_the_step_s_own_python_once_through_a_real_uv(tmp_path):
+    """The same through `uv run` itself, which forwards Ctrl-C to the Python it starts."""
+    mark = tmp_path / "mark"
+    uv = shutil.which("uv")
+    assert uv, "uv must be on PATH: the ratchet's steps run through it"
+    _stop_the_ratchet_mid_step(
+        mark, uv, "run", "--no-project", "--python", sys.executable, "python", "-c", MUTATION_RUN, str(mark)
+    )
+    assert mark.read_text() == "put back after 1 stop"
 
 
 def test_a_quality_step_hears_terminal_stops_only_through_the_ratchet():
@@ -404,13 +428,16 @@ class _StopError(Exception):
 
 
 class _UnreachableStep:
-    """A step whose first wait is cut short by a stop, as Ctrl-C cuts it, and that has no group."""
+    """A step whose first wait is cut short by a stop, as Ctrl-C cuts it, and that no signal can reach."""
 
     def __init__(self, *_args, ended=False, **_kwargs):
         self.waits, self.ended = 0, ended
         # Past the highest pid this machine hands out, so no group has this number.
         limit = pathlib.Path("/proc/sys/kernel/pid_max")
         self.pid = int(limit.read_text()) + 1 if limit.exists() else 2**22 + 1
+
+    def send_signal(self, signum):
+        os.kill(self.pid, signum)
 
     def wait(self):
         self.waits += 1
@@ -423,7 +450,7 @@ class _UnreachableStep:
 
 
 def test_a_stop_that_cannot_reach_a_running_step_is_not_ignored(monkeypatch):
-    """A step that was never given a group of its own cannot be told to stop by its group.
+    """A step that a stop cannot reach is not waited on as if it had been told.
 
     Ignoring that error left the ratchet waiting on a step nobody told, so the run looked fine.
     Only a step that has already ended may be missing.
