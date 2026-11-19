@@ -256,6 +256,19 @@ def test_a_row_that_breaks_the_code_is_named_and_runs_nothing(mutate):
     assert mutate.broken("README.md", "def f(:\n") is None
 
 
+def test_a_broken_row_is_named_in_the_written_report(tmp_path, monkeypatch, mutate, capsys):
+    """The run fails on a broken row; the evidence page and the run's summary page must say why."""
+    page, summary = tmp_path / "rule-mutations.md", tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+    args = mutate.argparse.Namespace(write=page, json=None)
+    results = [("proven", "src/a.py", 2, "test_proven", True)]
+    assert mutate.summarise(results, [], ["made-up broken rule"], args) == 1
+    capsys.readouterr()
+    for written in (page, summary):
+        text = written.read_text(encoding="utf-8")
+        assert "Broken rows, so nothing was tested: made-up broken rule." in text, written.name
+
+
 class _Pipe:
     """Output that, like a pipe in CI, shows only what has been flushed."""
 

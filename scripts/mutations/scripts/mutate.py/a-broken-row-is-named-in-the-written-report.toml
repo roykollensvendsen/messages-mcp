@@ -1,0 +1,5 @@
+[[rule]]
+name = "a broken row is named in the written report"
+file = "scripts/mutate.py"
+find = '^\s+\+ \(""\s+if not bad_rows else'
+replace = '+ ""'
