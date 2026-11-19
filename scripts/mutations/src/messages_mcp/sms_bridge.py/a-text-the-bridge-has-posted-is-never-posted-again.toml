@@ -1,0 +1,5 @@
+[[rule]]
+name = "a text the bridge has posted is never posted again"
+file = "src/messages_mcp/sms_bridge.py"
+find = '^\s*new = \[sms for sms in got\.messages if sms\.ident not in self\._seen\]$'
+replace = 'new = list(got.messages)'

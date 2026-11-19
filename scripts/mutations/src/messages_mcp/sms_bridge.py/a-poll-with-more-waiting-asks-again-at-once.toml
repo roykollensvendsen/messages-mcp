@@ -1,0 +1,5 @@
+[[rule]]
+name = "a poll with more waiting asks again at once"
+file = "src/messages_mcp/sms_bridge.py"
+find = '^\s*if got\.more:$'
+replace = 'if False:'

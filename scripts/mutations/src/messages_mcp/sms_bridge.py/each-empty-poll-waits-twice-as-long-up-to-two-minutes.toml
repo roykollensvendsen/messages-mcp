@@ -1,0 +1,5 @@
+[[rule]]
+name = "each empty poll waits twice as long up to two minutes"
+file = "src/messages_mcp/sms_bridge.py"
+find = '^\s*self\._wait = min\(self\._wait \* 2, LONGEST_WAIT\)$'
+replace = 'self._wait = FIRST_WAIT'

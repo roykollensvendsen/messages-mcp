@@ -96,6 +96,8 @@ CORE = {
     "send_settings",
     "send_limits",
     "sent_log",
+    # What M7 adds: sms-bridge's core, which pulls the phone's texts and posts each once.
+    "sms_bridge",
 }
 TOP = {"server", "cli"}
 #: Which layers each layer may import from this package, and the outside packages it never may.

@@ -1,0 +1,5 @@
+[[rule]]
+name = "a phone that stays away is logged once"
+file = "src/messages_mcp/sms_bridge.py"
+find = '^\s*if self\._failed == 1:$'
+replace = 'if True:'
