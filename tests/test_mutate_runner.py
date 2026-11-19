@@ -267,6 +267,7 @@ def test_a_broken_row_is_named_in_the_written_report(tmp_path, monkeypatch, muta
     for written in (page, summary):
         text = written.read_text(encoding="utf-8")
         assert "Broken rows, so nothing was tested: made-up broken rule." in text, written.name
+        assert "None survived" not in text, written.name
 
 
 class _Pipe:
