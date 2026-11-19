@@ -327,11 +327,14 @@ def _run(*command: str, cwd: Path = ROOT, env: dict[str, str] | None = None) -> 
     """Run one step, and stop it as Ctrl-C would if the ratchet is stopped while it runs.
 
     The step gets a session of its own, so a Ctrl-C in the terminal reaches it only through the
-    ratchet, once. On a stop the step's whole session gets SIGINT, uv's children included, and
-    is waited for with no time limit: a mutation run puts its line back before it ends, however
-    long that takes. A step that hangs even so is ended by hand with `kill -9 -- -<its pid>`,
-    which the ratchet prints. Its output goes to temporary files, so a step with a lot to say
-    never blocks on a full pipe, and one that outlives the ratchet never dies of a closed one.
+    ratchet, once. On a stop the step alone gets SIGINT, never its whole group: `uv run` passes a
+    Ctrl-C on to the Python it started, so a group-wide one reached that Python twice, and the
+    second cut its cleanup short. Passing the stop on is the step's own job. It is then waited for
+    with no time limit: a mutation run puts its line back before it ends, however long that takes.
+    A step that hangs even so is ended by hand with `kill -9 -- -<its pid>`, which the ratchet
+    prints; the session of its own is what lets that one command end all it started. Its output
+    goes to temporary files, so a step with a lot to say never blocks on a full pipe, and one that
+    outlives the ratchet never dies of a closed one.
     """
     with tempfile.TemporaryFile("w+") as out, tempfile.TemporaryFile("w+") as err:
         step = subprocess.Popen(
@@ -350,9 +353,9 @@ def _run(*command: str, cwd: Path = ROOT, env: dict[str, str] | None = None) -> 
             sys.stderr.write(f"stopping {command[0]}; if it hangs, end it with: kill -9 -- -{step.pid}\n")
             try:
                 # RULE: a stopped ratchet lets its mutation run put the line back
-                os.killpg(step.pid, signal.SIGINT)
+                step.send_signal(signal.SIGINT)
             except ProcessLookupError:
-                # Only a step that has ended may be missing; a live one with no group was never told.
+                # Only a step that has ended may be missing; a live one that was not reached was never told.
                 # RULE: a stop that cannot reach a running step is not ignored
                 if step.poll() is None:
                     raise
