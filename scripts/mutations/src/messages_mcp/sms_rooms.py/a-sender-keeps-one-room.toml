@@ -1,0 +1,5 @@
+[[rule]]
+name = "a sender keeps one room"
+file = "src/messages_mcp/sms_rooms.py"
+find = '^\s*if ghost in known:$'
+replace = 'if False:'

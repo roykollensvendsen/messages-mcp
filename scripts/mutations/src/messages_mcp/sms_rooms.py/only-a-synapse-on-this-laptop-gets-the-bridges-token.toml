@@ -1,0 +1,5 @@
+[[rule]]
+name = "only a synapse on this laptop gets the bridges token"
+file = "src/messages_mcp/sms_rooms.py"
+find = '^\s*if not on_this_laptop\(self\.homeserver\):$'
+replace = 'if False:'

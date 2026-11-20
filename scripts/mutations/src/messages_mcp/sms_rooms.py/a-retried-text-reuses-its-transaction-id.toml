@@ -1,0 +1,5 @@
+[[rule]]
+name = "a retried text reuses its transaction id"
+file = "src/messages_mcp/sms_rooms.py"
+find = '^\s*return "sms-" \+ hashlib\.sha256\(ident\.encode\(\)\)\.hexdigest\(\)\[:32\]$'
+replace = 'return "sms-" + secrets.token_hex(16)'

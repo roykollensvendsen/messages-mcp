@@ -98,6 +98,8 @@ CORE = {
     "sent_log",
     # What M7 adds: sms-bridge's core, which pulls the phone's texts and posts each once.
     "sms_bridge",
+    # Its Matrix side: the appservice's registration, and one room per sender.
+    "sms_rooms",
 }
 TOP = {"server", "cli"}
 #: Which layers each layer may import from this package, and the outside packages it never may.
