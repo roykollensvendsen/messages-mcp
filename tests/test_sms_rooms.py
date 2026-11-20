@@ -369,3 +369,17 @@ def test_a_ghost_registered_before_is_taken_as_it_is(tmp_path):
     server = run(steps)
     assert len(server.asked("POST", "/register")) == 2
     assert len(server.users) == 1
+
+
+def test_texts_from_an_unknown_sender_share_one_room(tmp_path):
+    """The phone names a text with no sender 'an unknown sender', of kind name (mobile #137)."""
+
+    async def steps(server):
+        here = rooms(server, tmp_path)
+        for ident in ("madeup00-1", "madeup00-2"):
+            await here.post(sms(ident, sender="an unknown sender", kind="name"))
+
+    server = run(steps)
+    [room] = server.rooms
+    assert len(server.messages(room)) == 2
+    assert ghost_of("an unknown sender", "name", SERVER).startswith("@sms_name_")
