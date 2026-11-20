@@ -38,6 +38,10 @@ commits range="origin/main..HEAD":
 red-first base="origin/main":
     {{python}} scripts/red_first.py --base {{base}} --head HEAD
 
+# Is the phone's sms_since schema on claude-voice-mobile's main still the pinned copy? Nightly in CI.
+schema-pin:
+    python3 scripts/schema_pin.py upstream
+
 # No measure worse than main's, unless the pull request says why. Never give it a time limit.
 ratchet base="origin/main":
     {{python}} scripts/ratchet.py check --base {{base}}
