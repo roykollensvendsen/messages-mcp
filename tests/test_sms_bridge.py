@@ -12,11 +12,14 @@ import logging
 import pathlib
 import stat
 
+import jsonschema
 import pytest
 
 from messages_mcp import sms_bridge
 from messages_mcp.sms_bridge import FIRST_WAIT, LONGEST_WAIT, BadAnswerError, SmsBridge, parse
 
+#: The commit of claude-voice-mobile's schema this copy was taken from (#132, review round 2).
+SOURCE = "01aaa6f227e5fc0cf0cea27848d0207a6609a618"
 #: A copy of claude-voice-mobile's docs/plugins/sms/sms-since-answer.json (ADR-CVM-010), at #132's
 #: 01aaa6f. Its one example number is written `+<country><number>`, so our private-data scan passes.
 SCHEMA = json.loads((pathlib.Path(__file__).parent / "sms-since-answer.json").read_text(encoding="utf-8"))
@@ -205,7 +208,14 @@ def test_new_traffic_brings_the_wait_back_to_fifteen_seconds(tmp_path):
 
 
 def test_a_poll_with_more_waiting_asks_again_at_once(tmp_path):
-    assert poll(bridge(tmp_path, FakeHub(answer(text("a"), more=True)))) == 0
+    assert poll(bridge(tmp_path, FakeHub(answer(text("madeup00-1"), more=True)))) == 0
+
+
+def test_a_phone_that_says_more_with_nothing_new_is_asked_again_after_a_second(tmp_path):
+    """A phone that keeps saying more but gives only texts already posted must not spin."""
+    b = bridge(tmp_path, FakeHub(answer(text("madeup00-1"), more=True), answer(text("madeup00-1"), more=True)))
+    poll(b)
+    assert poll(b) == sms_bridge.MORE_BUT_NOTHING_NEW == 1
 
 
 def test_a_phone_that_does_not_answer_backs_off_like_an_empty_poll(tmp_path):
@@ -230,6 +240,71 @@ def test_a_refusal_from_the_phone_is_logged_with_its_own_words(tmp_path, caplog)
     hub = FakeHub(sms_bridge.RefusedError("permission_missing: grant Read SMS in the app's settings"))
     poll(bridge(tmp_path, hub))
     assert "permission_missing" in caplog.records[0].getMessage()
+
+
+REFUSAL = "permission_missing: grant Read SMS in the made-up app's settings"
+
+
+def test_an_outage_the_phone_explains_is_told_to_the_owner_once(tmp_path):
+    """The owner takes back the read permission: one notice, with the phone's words, then quiet."""
+    rooms = FakeRooms()
+    refused = sms_bridge.RefusedError(REFUSAL)
+    b = bridge(tmp_path, FakeHub(refused, refused, refused), rooms)
+    for _ in range(3):
+        poll(b)
+    assert len(rooms.notices) == 1
+    assert REFUSAL in rooms.notices[0]
+
+
+def test_an_answer_off_the_schema_is_told_to_the_owner_once(tmp_path):
+    rooms = FakeRooms()
+    b = bridge(tmp_path, FakeHub({"wrong": 1}, {"wrong": 1}), rooms)
+    poll(b)
+    poll(b)
+    assert len(rooms.notices) == 1
+    assert "not of the agreed shape" in rooms.notices[0]
+
+
+def test_a_phone_that_is_only_away_is_not_told_to_the_owner(tmp_path):
+    """A phone off the tailnet for a while is normal; its texts wait on it."""
+    rooms = FakeRooms()
+    poll(bridge(tmp_path, FakeHub(OSError("away")), rooms))
+    assert rooms.notices == []
+
+
+def test_the_owner_is_told_when_texts_come_through_again(tmp_path):
+    rooms = FakeRooms()
+    refused = sms_bridge.RefusedError(REFUSAL)
+    b = bridge(tmp_path, FakeHub(refused, refused, answer(), answer()), rooms)
+    for _ in range(4):
+        poll(b)
+    assert len(rooms.notices) == 2
+    assert rooms.notices[1] == sms_bridge.BACK
+
+
+def test_texts_coming_through_again_are_not_told_when_the_outage_was_not(tmp_path):
+    rooms = FakeRooms()
+    b = bridge(tmp_path, FakeHub(OSError("away"), answer()), rooms)
+    poll(b)
+    poll(b)
+    assert rooms.notices == []
+
+
+def test_a_notice_that_fails_is_tried_at_the_next_failure(tmp_path):
+    class Flaky(FakeRooms):
+        async def notice(self, words):
+            if not self.notices and not getattr(self, "failed_once", False):
+                self.failed_once = True
+                msg = "the made-up homeserver did not answer"
+                raise OSError(msg)
+            await super().notice(words)
+
+    rooms = Flaky()
+    refused = sms_bridge.RefusedError(REFUSAL)
+    b = bridge(tmp_path, FakeHub(refused, refused, refused), rooms)
+    for _ in range(3):
+        poll(b)
+    assert len(rooms.notices) == 1
 
 
 def test_a_reset_from_the_phone_is_logged(tmp_path, caplog):
@@ -289,12 +364,20 @@ def test_an_answer_off_the_schema_is_refused(change):
 @pytest.mark.parametrize("change", OFF_SCHEMA)
 def test_the_schema_itself_refuses_what_the_bridge_refuses(change):
     """So the copy of the schema and these checks say the same; a new copy that differs shows here."""
-    jsonschema = pytest.importorskip("jsonschema")
     given = answer(text("madeup00-1"))
     jsonschema.validate(given, SCHEMA)
     change(given)
     with pytest.raises(jsonschema.ValidationError):
         jsonschema.validate(given, SCHEMA)
+
+
+def test_a_time_that_fits_the_pattern_but_is_not_real_is_refused():
+    """The schema's pattern lets it through, and 2020-12 treats `format` as a note only."""
+    given = answer(text("madeup00-1"))
+    given["messages"][0]["received_at"] = "2026-13-40T25:61:00+99:00"
+    with pytest.raises(BadAnswerError) as refused:
+        parse(given)
+    assert isinstance(refused.value.__cause__, ValueError)
 
 
 def test_the_schema_s_own_examples_are_read():
@@ -334,7 +417,11 @@ def test_only_the_newest_ids_are_remembered(tmp_path):
         poll(b)
     kept = json.loads((tmp_path / "sms-bridge" / "position.json").read_text(encoding="utf-8"))
     assert len(kept["seen"]) == 10
-    assert sms_bridge.KEEP_SEEN == 1000
+
+
+def test_twice_the_phone_s_queue_of_ids_is_remembered():
+    """The phone keeps at most 500 texts, so a reset can give back no more than that."""
+    assert sms_bridge.KEEP_SEEN >= 2 * 500
 
 
 def test_run_polls_until_stopped_and_waits_as_each_poll_says(tmp_path):

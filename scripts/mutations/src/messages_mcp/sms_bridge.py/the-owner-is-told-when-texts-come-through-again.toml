@@ -1,0 +1,5 @@
+[[rule]]
+name = "the owner is told when texts come through again"
+file = "src/messages_mcp/sms_bridge.py"
+find = '^\s*if self\._told:$'
+replace = 'if False:'
