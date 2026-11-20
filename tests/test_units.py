@@ -26,7 +26,7 @@ def test_each_service_runs_as_the_owner_and_writes_only_its_own_folder(name):
     assert service["NoNewPrivileges"] == "yes"
     assert service["ProtectSystem"] == "strict"
     writes = service.get("ReadWritePaths", "").split()
-    assert all(path.startswith("%h/") for path in writes)
+    assert all(path.removeprefix("-").startswith("%h/") for path in writes)
 
 
 def test_synapse_reads_our_settings_after_its_own_and_the_bridges_last():
@@ -77,4 +77,5 @@ def test_sms_bridge_starts_after_synapse_and_is_never_restarted_when_not_set_up(
     assert service["ExecStart"].split()[1:] == ["sms-bridge", "run"]
     assert "sms-bridge" in cli.COMMANDS
     assert service["RestartPreventExitStatus"] == str(cli.NOT_SET_UP)
-    assert service["ReadWritePaths"].split() == ["%h/.local/share/sms-bridge", "%h/.local/state/sms-bridge"]
+    assert service["StateDirectory"] == "sms-bridge", "systemd makes the state folder before the start"
+    assert service["ReadWritePaths"] == "-%h/.local/share/sms-bridge", "a missing data folder never fails the start"

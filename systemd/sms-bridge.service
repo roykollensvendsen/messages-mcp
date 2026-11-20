@@ -17,7 +17,11 @@ UMask=0077
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
-ReadWritePaths=%h/.local/share/sms-bridge %h/.local/state/sms-bridge
+# systemd makes the state folder before the start. A folder named in ReadWritePaths that does
+# not exist fails the start (226/NAMESPACE) before sms-bridge runs, so the data folder, made by
+# `messages-mcp sms-bridge registration`, has a `-`: without it, sms-bridge exits 2 instead.
+StateDirectory=sms-bridge
+ReadWritePaths=-%h/.local/share/sms-bridge
 
 [Install]
 WantedBy=default.target
