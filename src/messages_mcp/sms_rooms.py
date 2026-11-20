@@ -138,6 +138,13 @@ class MatrixRooms:
         self._token = token
         self._making = asyncio.Lock()
 
+    def check(self) -> None:
+        """`NotSetUpError`, naming the file, when the room list is there but cannot be read as one."""
+        try:
+            self._known()
+        except RoomsError as broken:
+            raise NotSetUpError(str(broken)) from broken
+
     async def post(self, sms: Sms) -> None:
         """Send `sms` as its sender's ghost into the sender's room, making both the first time."""
         ghost = ghost_of(sms.sender, sms.sender_kind, self.server)

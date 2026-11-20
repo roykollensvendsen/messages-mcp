@@ -177,3 +177,12 @@ def test_run_waits_on_the_stop_when_given_no_sleep(tmp_path):
         return bridge.empty_polls
 
     assert asyncio.run(go()) == 1
+
+
+@pytest.mark.parametrize("kept", ["[]", "{not json"])
+def test_a_broken_room_list_stops_sms_bridge_at_its_start(own_folders, capsys, kept):
+    """Polling on would only fail each text; exit 2 names the file, and the unit is not restarted."""
+    _set_up(own_folders)
+    (own_folders / "data" / "sms-bridge" / "rooms.json").write_text(kept, encoding="utf-8")
+    assert _run(keys=Key(), caller=Bridge()) == 2
+    assert "rooms.json" in capsys.readouterr().err

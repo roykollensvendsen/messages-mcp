@@ -221,6 +221,8 @@ def sms_bridge_parts(
     hub = PhoneHub(caller, configured.sms_phone, keys)
     token = as_token(data / "registration.yaml")
     rooms = MatrixRooms(configured.homeserver, token, owner_of(configured.login_file()), data / "rooms.json")
+    # RULE: a broken room list stops sms-bridge at its start
+    rooms.check()
     return SmsBridge(hub, rooms, state / "position.json")
 
 
