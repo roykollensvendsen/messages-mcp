@@ -1,0 +1,5 @@
+[[rule]]
+name = "an issue someone else opened is never edited or closed"
+file = "scripts/schema_pin.py"
+find = '^\s*if issue\.get\("title"\) == ISSUE_TITLE and _login\(issue\) in JOB$'
+replace = 'if issue.get("title") == ISSUE_TITLE'

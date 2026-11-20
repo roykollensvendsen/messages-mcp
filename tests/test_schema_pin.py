@@ -174,8 +174,11 @@ MOVED = [
     "docs/schema.json on made-up/repo's main is no longer the file pinned at aaaaaaaaaaaa.",
     "Its digest is now c.",
 ]
-OURS = {"number": 7, "title": schema_pin.ISSUE_TITLE}
-OTHER = {"number": 3, "title": "a made-up issue about something else"}
+JOB = {"login": "app/github-actions", "is_bot": True}
+OURS = {"number": 7, "title": schema_pin.ISSUE_TITLE, "author": JOB, "body": "an older text"}
+OTHER = {"number": 3, "title": "a made-up issue about something else", "author": JOB}
+#: The same title, opened by someone else: anyone may open an issue on a public repository.
+THEIRS = {"number": 5, "title": schema_pin.ISSUE_TITLE, "author": {"login": "made-up-person"}, "body": "x"}
 
 
 def test_main_moving_on_opens_one_issue():
@@ -224,6 +227,28 @@ def test_the_issue_is_kept_with_gh_after_listing_the_open_ones():
     assert len(ran) == 2
 
 
+def test_only_an_issue_the_nightly_job_opened_itself_is_ever_changed():
+    """An outsider's issue of the same title is never listed, so never edited or closed."""
+    ran = []
+
+    def run(argv):
+        ran.append(argv)
+        return "[]"
+
+    schema_pin.keep_issue([], run)
+    [listed] = ran
+    assert listed[listed.index("--author") + 1] == "app/github-actions"
+    assert listed[listed.index("--state") + 1] == "open"
+
+
+def test_the_issue_is_searched_by_its_title_so_many_open_issues_never_hide_it():
+    ran = []
+    schema_pin.keep_issue([], lambda argv: ran.append(argv) or "[]")
+    [listed] = ran
+    assert listed[listed.index("--search") + 1] == f'"{schema_pin.ISSUE_TITLE}" in:title'
+    assert "--limit" not in listed
+
+
 def test_upstream_with_issue_keeps_the_issue_and_without_it_does_not(monkeypatch, capsys):
     get, _ = by_ref(theirs(), "{}")
     monkeypatch.setattr(schema_pin, "fetch", get)
@@ -245,3 +270,32 @@ def test_a_wrong_pin_touches_no_issue(monkeypatch, capsys):
     assert schema_pin.main(["upstream", "--issue"]) == 1
     assert kept == []
     capsys.readouterr()
+
+
+def test_an_issue_someone_else_opened_is_never_edited_or_closed():
+    assert schema_pin.issue_steps([], [THEIRS], PIN) == []
+    [step] = schema_pin.issue_steps(MOVED, [THEIRS], PIN)
+    assert step[:3] == ["gh", "issue", "create"], "ours is made; theirs is left as it is"
+    assert schema_pin.issue_steps([], [{**THEIRS, "author": "made-up"}], PIN) == []
+    assert schema_pin.issue_steps([], [{k: v for k, v in THEIRS.items() if k != "author"}], PIN) == []
+
+
+def test_an_issue_whose_text_is_already_current_is_not_edited():
+    current = {**OURS, "body": "\n\n".join(MOVED)}
+    assert schema_pin.issue_steps(MOVED, [current], PIN) == []
+
+
+def test_each_gh_call_has_a_time_limit(monkeypatch):
+    seen = {}
+
+    class Done:
+        stdout = "[]"
+
+    def run(_argv, **how):
+        seen.update(how)
+        return Done()
+
+    monkeypatch.setattr(schema_pin.subprocess, "run", run)
+    assert schema_pin._gh(["gh", "--version"]) == "[]"
+    assert seen["timeout"] == 60
+    assert seen["check"] is True

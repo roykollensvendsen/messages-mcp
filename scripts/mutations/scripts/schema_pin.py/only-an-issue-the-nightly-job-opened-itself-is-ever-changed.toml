@@ -1,0 +1,5 @@
+[[rule]]
+name = "only an issue the nightly job opened itself is ever changed"
+file = "scripts/schema_pin.py"
+find = '^ISSUE_SEARCH = \["gh", "issue", "list", "--state", "open", "--author", "app/github-actions", "--search"\]$'
+replace = 'ISSUE_SEARCH = ["gh", "issue", "list", "--state", "open", "--search"]'
