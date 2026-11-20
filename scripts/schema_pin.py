@@ -49,6 +49,12 @@ RAW = "https://raw.githubusercontent.com/{repo}/{ref}/{path}"
 TIMEOUT = 30
 #: The one issue the nightly job keeps while the phone's main has moved on from the pin.
 ISSUE_TITLE = "The phone's text schema has moved on from the pin"
+#: How the job finds that issue: open, opened by the job itself, searched by title, not paged.
+ISSUE_SEARCH = ["gh", "issue", "list", "--state", "open", "--author", "app/github-actions", "--search"]
+#: The names `gh` may give the job's own author, GitHub Actions' bot. Only a workflow can be it.
+JOB = {"app/github-actions", "github-actions", "github-actions[bot]"}
+#: Seconds for each `gh` call.
+GH_TIMEOUT = 60
 
 
 def normalised(text: str) -> str:
@@ -127,26 +133,39 @@ def _remind(said: list[str]) -> None:
 
 def issue_steps(moved: list[str], open_issues: list[dict[str, object]], pin: dict[str, str]) -> list[list[str]]:
     """The `gh` calls that keep one issue in step with whether main has moved; none when it is."""
-    ours = sorted(int(str(issue["number"])) for issue in open_issues if issue.get("title") == ISSUE_TITLE)
+    ours = sorted(
+        (int(str(issue["number"])), str(issue.get("body", "")))
+        for issue in open_issues
+        # RULE: an issue someone else opened is never edited or closed
+        if issue.get("title") == ISSUE_TITLE and _login(issue) in JOB
+    )
     if moved:
         body = "\n\n".join(moved)
         # RULE: one issue is kept while the schema stays moved
         if ours:
-            return [["gh", "issue", "edit", str(ours[0]), "--body", body]]
+            number, kept = ours[0]
+            return [] if kept == body else [["gh", "issue", "edit", str(number), "--body", body]]
         return [["gh", "issue", "create", "--title", ISSUE_TITLE, "--body", body]]
     said = f"The pin matches {pin['path']} on main again, at {pin['commit'][:12]}."
     # RULE: the issue is closed when the pin catches up
-    return [["gh", "issue", "close", str(number), "--comment", said] for number in ours]
+    return [["gh", "issue", "close", str(number), "--comment", said] for number, _ in ours]
+
+
+def _login(issue: dict[str, object]) -> str:
+    """Who opened `issue`, as `gh` gives it; empty when it does not say."""
+    author = issue.get("author")
+    return str(author.get("login", "")) if isinstance(author, dict) else ""
 
 
 def _gh(argv: list[str]) -> str:
     """Run one `gh` call; its output."""
-    return subprocess.run(argv, check=True, capture_output=True, text=True).stdout
+    return subprocess.run(argv, check=True, capture_output=True, text=True, timeout=GH_TIMEOUT).stdout
 
 
 def keep_issue(moved: list[str], run: Callable[[list[str]], str] = _gh, pin_file: pathlib.Path = PIN) -> None:
     """Open, update or close the one issue, as `issue_steps` says."""
-    listed = run(["gh", "issue", "list", "--state", "open", "--limit", "100", "--json", "number,title"])
+    # RULE: only an issue the nightly job opened itself is ever changed
+    listed = run([*ISSUE_SEARCH, f'"{ISSUE_TITLE}" in:title', "--json", "number,title,author,body"])
     for step in issue_steps(moved, json.loads(listed), pinned(pin_file)):
         run(step)
 
