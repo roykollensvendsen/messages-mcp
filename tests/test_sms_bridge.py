@@ -18,10 +18,10 @@ import pytest
 from messages_mcp import sms_bridge
 from messages_mcp.sms_bridge import FIRST_WAIT, LONGEST_WAIT, BadAnswerError, SmsBridge, parse
 
-#: The commit of claude-voice-mobile's schema this copy was taken from (#132, review round 2).
-SOURCE = "01aaa6f227e5fc0cf0cea27848d0207a6609a618"
-#: A copy of claude-voice-mobile's docs/plugins/sms/sms-since-answer.json (ADR-CVM-010), at #132's
-#: 01aaa6f. Its one example number is written `+<country><number>`, so our private-data scan passes.
+#: The claude-voice-mobile commit the copy below is pinned to (tests/sms-since-answer.pin.json).
+SOURCE = json.loads((pathlib.Path(__file__).parent / "sms-since-answer.pin.json").read_text(encoding="utf-8"))["commit"]
+#: A copy of claude-voice-mobile's docs/plugins/sms/sms-since-answer.json (ADR-CVM-010), at the pinned
+#: SOURCE commit. Its one example number is written `+<country><number>`, so our private-data scan passes.
 SCHEMA = json.loads((pathlib.Path(__file__).parent / "sms-since-answer.json").read_text(encoding="utf-8"))
 
 #: A made-up number, built here so no number in international form is written in the repository.
