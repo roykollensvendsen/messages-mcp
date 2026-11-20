@@ -1,0 +1,5 @@
+[[rule]]
+name = "a broken room list stops sms-bridge at its start"
+file = "src/messages_mcp/cli.py"
+find = '^\s*rooms\.check\(\)$'
+replace = 'pass'
