@@ -1,0 +1,5 @@
+[[rule]]
+name = "one issue is kept while the schema stays moved"
+file = "scripts/schema_pin.py"
+find = '^\s*if ours:$'
+replace = 'if False:'
