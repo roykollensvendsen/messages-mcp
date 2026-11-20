@@ -215,11 +215,14 @@ registration is readable by the owner only. Synapse runs as the owner, so it rea
 Never make it readable by others.
 
 Set `phone` under `[sms]` in `~/.config/messages-mcp/config.toml` to the phone's name, as the
-claude-voice bridge names its tools. Synapse then reads both bridges' registrations.
+claude-voice bridge names its tools. Synapse then reads both bridges' registrations. The list
+Synapse reads now is first copied to the backups folder, with the time in its name.
 
 <!-- not run: it writes Synapse's config and starts services on the host -->
 ```
 messages-mcp sms-bridge registration
+mkdir -p -m 700 ~/.local/state/claude-voice/backups/messages-mcp
+cp ~/.local/share/synapse/bridge.yaml ~/.local/state/claude-voice/backups/messages-mcp/bridge.yaml.$(date +%Y%m%dT%H%M%S)
 printf 'app_service_config_files:\n  - %s\n  - %s\n' \
   "$HOME/.local/share/mautrix-meta/registration.yaml" \
   "$HOME/.local/share/sms-bridge/registration.yaml" > ~/.local/share/synapse/bridge.yaml
