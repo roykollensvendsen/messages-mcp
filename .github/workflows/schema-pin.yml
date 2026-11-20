@@ -1,9 +1,10 @@
 name: schema-pin
 
-# Nightly, and by hand: is the phone's sms_since answer schema on claude-voice-mobile's main still
-# the file our copy is pinned to? A red run means it moved: read what changed, update sms-bridge if
-# a field did, and move the pin (scripts/schema_pin.py says how). The repository is public, so
-# the fetch needs no token.
+# Nightly, and by hand: is the pin true, and is the phone's sms_since answer schema on
+# claude-voice-mobile's main still the file our copy is pinned to? A red run means the pin itself
+# is wrong. Main moving on is a reminder, not a failure: one issue says so, kept current while it
+# stays moved and closed when the pin catches up (scripts/schema_pin.py). The phone's repository
+# is public, so the fetch needs no token; only the issue needs this repository's own token.
 on:
   schedule:
     - cron: "17 4 * * *"
@@ -15,7 +16,7 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# Nothing here writes to the repository, its issues or its packages.
+# Nothing here writes to the repository or its packages. Only the job below may write issues.
 permissions:
   contents: read
 
@@ -23,7 +24,12 @@ jobs:
   upstream:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # Standard library only, so the runner's own Python is enough.
-      - run: python3 scripts/schema_pin.py upstream
+      - run: python3 scripts/schema_pin.py upstream --issue
+        env:
+          GH_TOKEN: ${{ github.token }}

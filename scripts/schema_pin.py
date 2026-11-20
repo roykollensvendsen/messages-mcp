@@ -14,6 +14,10 @@ the phone's own file are compared by the same digest, and no digits are kept her
 pin itself is wrong. The phone's main moving on is only a reminder (no-duplicates n8): exit 0,
 with a `::notice::` line and, on GitHub, a step summary saying how to move the pin.
 
+With `--issue`, as the nightly job runs it, the reminder is also one GitHub issue, made with
+`gh`: opened when main moves on, its text kept current while it stays moved, and closed when the
+pin catches up. It names only the file, the pinned commit and the new digest.
+
 Moving the pin is one pull request: copy the new file, written the same way, and set the
 commit and the digest this prints in the pin.
 """
@@ -25,6 +29,7 @@ import hashlib
 import json
 import os
 import pathlib
+import subprocess
 import sys
 import urllib.request
 from typing import TYPE_CHECKING
@@ -42,6 +47,8 @@ PLACEHOLDER = "+<country><number>"
 RAW = "https://raw.githubusercontent.com/{repo}/{ref}/{path}"
 #: Seconds for the one fetch the nightly job makes.
 TIMEOUT = 30
+#: The one issue the nightly job keeps while the phone's main has moved on from the pin.
+ISSUE_TITLE = "The phone's text schema has moved on from the pin"
 
 
 def normalised(text: str) -> str:
@@ -118,10 +125,37 @@ def _remind(said: list[str]) -> None:
             page.write("## The phone's text schema moved on\n\n" + "\n\n".join(said) + "\n")
 
 
+def issue_steps(moved: list[str], open_issues: list[dict[str, object]], pin: dict[str, str]) -> list[list[str]]:
+    """The `gh` calls that keep one issue in step with whether main has moved; none when it is."""
+    ours = sorted(int(str(issue["number"])) for issue in open_issues if issue.get("title") == ISSUE_TITLE)
+    if moved:
+        body = "\n\n".join(moved)
+        # RULE: one issue is kept while the schema stays moved
+        if ours:
+            return [["gh", "issue", "edit", str(ours[0]), "--body", body]]
+        return [["gh", "issue", "create", "--title", ISSUE_TITLE, "--body", body]]
+    said = f"The pin matches {pin['path']} on main again, at {pin['commit'][:12]}."
+    # RULE: the issue is closed when the pin catches up
+    return [["gh", "issue", "close", str(number), "--comment", said] for number in ours]
+
+
+def _gh(argv: list[str]) -> str:
+    """Run one `gh` call; its output."""
+    return subprocess.run(argv, check=True, capture_output=True, text=True).stdout
+
+
+def keep_issue(moved: list[str], run: Callable[[list[str]], str] = _gh, pin_file: pathlib.Path = PIN) -> None:
+    """Open, update or close the one issue, as `issue_steps` says."""
+    listed = run(["gh", "issue", "list", "--state", "open", "--limit", "100", "--json", "number,title"])
+    for step in issue_steps(moved, json.loads(listed), pinned(pin_file)):
+        run(step)
+
+
 def main(argv: list[str] | None = None) -> int:
     """Check the copy, or the pin and the phone's main; 1, with what is wrong, when the copy or pin is."""
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("what", choices=("copy", "upstream"))
+    parser.add_argument("--issue", action="store_true", help="upstream: keep one GitHub issue while main has moved")
     args = parser.parse_args(argv)
     wrong = check_copy() if args.what == "copy" else check_pinned(fetch)
     for line in wrong:
@@ -131,9 +165,13 @@ def main(argv: list[str] | None = None) -> int:
     sys.stdout.write(
         "The copy matches the pin.\n" if args.what == "copy" else "The file at the pinned commit matches the pin.\n"
     )
-    if args.what == "upstream" and (moved := check_upstream(fetch)):
+    if args.what != "upstream":
+        return 0
+    if moved := check_upstream(fetch):
         # RULE: the phone's main moving on is a reminder not a failure
         _remind(moved)
+    if args.issue:
+        keep_issue(moved)
     return 0
 
 

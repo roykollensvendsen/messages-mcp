@@ -1,0 +1,5 @@
+[[rule]]
+name = "the issue is closed when the pin catches up"
+file = "scripts/schema_pin.py"
+find = '^\s*return \[\["gh", "issue", "close", str\(number\), "--comment", said\] for number in ours\]$'
+replace = 'return []'

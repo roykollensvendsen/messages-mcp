@@ -147,7 +147,16 @@ def test_the_nightly_job_checks_the_phone_s_main_and_nothing_else():
     assert set(triggers) == {"schedule", "workflow_dispatch"}
     assert job["permissions"] == {"contents": "read"}
     [steps] = [j["steps"] for j in job["jobs"].values()]
-    assert steps[-1]["run"] == "python3 scripts/schema_pin.py upstream"
+    assert steps[-1]["run"] == "python3 scripts/schema_pin.py upstream --issue"
+
+
+def test_only_the_nightly_job_may_write_issues_and_nothing_else():
+    job = yaml.safe_load((ROOT / ".github/workflows/schema-pin.yml").read_text(encoding="utf-8"))
+    assert job["permissions"] == {"contents": "read"}, "the workflow as a whole writes nothing"
+    [(name, upstream)] = job["jobs"].items()
+    assert name == "upstream"
+    assert upstream["permissions"] == {"contents": "read", "issues": "write"}
+    assert upstream["steps"][-1]["env"] == {"GH_TOKEN": "${{ github.token }}"}
 
 
 def test_the_pin_file_is_plain_json():
@@ -158,3 +167,81 @@ def test_the_pin_file_is_plain_json():
 def test_the_command_line_takes_only_copy_or_upstream(what):
     with pytest.raises(SystemExit):
         schema_pin.main([what + "x"])
+
+
+PIN = {"repo": "made-up/repo", "path": "docs/schema.json", "commit": "a" * 40, "sha256": "b" * 64}
+MOVED = [
+    "docs/schema.json on made-up/repo's main is no longer the file pinned at aaaaaaaaaaaa.",
+    "Its digest is now c.",
+]
+OURS = {"number": 7, "title": schema_pin.ISSUE_TITLE}
+OTHER = {"number": 3, "title": "a made-up issue about something else"}
+
+
+def test_main_moving_on_opens_one_issue():
+    [step] = schema_pin.issue_steps(MOVED, [OTHER], PIN)
+    assert step[:3] == ["gh", "issue", "create"]
+    assert step[step.index("--title") + 1] == schema_pin.ISSUE_TITLE
+    assert step[step.index("--body") + 1] == "\n\n".join(MOVED)
+
+
+def test_one_issue_is_kept_while_the_schema_stays_moved():
+    assert schema_pin.issue_steps(MOVED, [OTHER, OURS], PIN) == [
+        ["gh", "issue", "edit", "7", "--body", "\n\n".join(MOVED)]
+    ]
+
+
+def test_the_issue_is_closed_when_the_pin_catches_up():
+    [step] = schema_pin.issue_steps([], [OURS, OTHER], PIN)
+    assert step[:4] == ["gh", "issue", "close", "7"]
+    assert "aaaaaaaaaaaa" in step[-1]
+
+
+def test_nothing_is_done_when_the_pin_matches_and_no_issue_is_open():
+    assert schema_pin.issue_steps([], [OTHER], PIN) == []
+
+
+def test_the_issue_names_only_the_file_the_pin_and_the_digest():
+    """Neutral words: what moved and how to move the pin, nothing about any person or text."""
+    said = schema_pin.check_upstream(lambda _url: "{}")
+    [step] = schema_pin.issue_steps(said, [], schema_pin.pinned())
+    body = step[step.index("--body") + 1]
+    assert schema_pin.digest("{}") in body
+    assert schema_pin.pinned()["commit"][:12] in body
+    assert schema_pin.normalised(body) == body, "no number in international form"
+
+
+def test_the_issue_is_kept_with_gh_after_listing_the_open_ones():
+    ran = []
+
+    def run(argv):
+        ran.append(argv)
+        return json.dumps([OURS]) if argv[:3] == ["gh", "issue", "list"] else ""
+
+    schema_pin.keep_issue(MOVED, run)
+    assert ran[0][:3] == ["gh", "issue", "list"]
+    assert ran[1][:4] == ["gh", "issue", "edit", "7"]
+    assert len(ran) == 2
+
+
+def test_upstream_with_issue_keeps_the_issue_and_without_it_does_not(monkeypatch, capsys):
+    get, _ = by_ref(theirs(), "{}")
+    monkeypatch.setattr(schema_pin, "fetch", get)
+    kept = []
+    monkeypatch.setattr(schema_pin, "keep_issue", kept.append)
+    assert schema_pin.main(["upstream"]) == 0
+    assert kept == []
+    assert schema_pin.main(["upstream", "--issue"]) == 0
+    assert len(kept) == 1
+    assert schema_pin.digest("{}") in kept[0][1]
+    capsys.readouterr()
+
+
+def test_a_wrong_pin_touches_no_issue(monkeypatch, capsys):
+    get, _ = by_ref("{}", theirs())
+    monkeypatch.setattr(schema_pin, "fetch", get)
+    kept = []
+    monkeypatch.setattr(schema_pin, "keep_issue", kept.append)
+    assert schema_pin.main(["upstream", "--issue"]) == 1
+    assert kept == []
+    capsys.readouterr()
