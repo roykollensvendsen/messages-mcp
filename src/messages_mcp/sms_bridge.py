@@ -17,6 +17,7 @@ It knows the hub and the rooms only through `Hub` and `Rooms`, so the tests run 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import datetime as dt
 import json
 import logging
@@ -265,10 +266,11 @@ class SmsBridge:
         self._save(got.cursor)
         return len(new)
 
-    async def run(self, stop: asyncio.Event, sleep: Callable[[float], Awaitable[object]] = asyncio.sleep) -> None:
-        """Poll until `stop` is set, waiting between polls as each one says."""
+    async def run(self, stop: asyncio.Event, sleep: Callable[[float], Awaitable[object]] | None = None) -> None:
+        """Poll until `stop` is set, waiting between polls as each one says; a stop ends a wait at once."""
         while not stop.is_set():
-            await sleep(await self.poll())
+            wait = await self.poll()
+            await (sleep(wait) if sleep is not None else _until(stop, wait))
 
 
 def outage_notice(failed: Exception) -> str | None:
@@ -281,6 +283,12 @@ def outage_notice(failed: Exception) -> str | None:
             f" ({failed}). The texts wait on the phone; update claude-voice-mobile or messages-mcp so they agree."
         )
     return None
+
+
+async def _until(stop: asyncio.Event, seconds: float) -> None:
+    """Wait `seconds`, or less if `stop` is set meanwhile."""
+    with contextlib.suppress(TimeoutError):
+        await asyncio.wait_for(stop.wait(), seconds)
 
 
 def _why(failed: Exception) -> str:

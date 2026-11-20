@@ -1,0 +1,5 @@
+[[rule]]
+name = "the cursor goes back exactly as it came"
+file = "src/messages_mcp/sms_hub.py"
+find = '^\s*arguments = \{\} if cursor is None else \{"cursor": cursor\}$'
+replace = 'arguments = {}'

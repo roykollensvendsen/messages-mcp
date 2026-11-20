@@ -15,6 +15,11 @@ homeserver = "http://127.0.0.1:8008"
 cert = ""
 key = ""
 
+[sms]
+# The phone sms-bridge pulls texts from, as the claude-voice bridge names it, for example
+# "phone-a". Empty means sms-bridge is not set up and stops at its start, saying so.
+phone = ""
+
 [accounts]
 # Optional names for the bridged Messenger logins, said instead of "account 1" and
 # "account 2". Each line is the bridge's login ID = a short name, for example:

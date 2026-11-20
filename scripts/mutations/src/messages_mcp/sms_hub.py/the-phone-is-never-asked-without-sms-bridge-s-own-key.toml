@@ -1,0 +1,5 @@
+[[rule]]
+name = "the phone is never asked without sms-bridge's own key"
+file = "src/messages_mcp/sms_hub.py"
+find = '^\s*key = self\.keys\.key\(\)$'
+replace = 'key = ""'

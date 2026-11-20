@@ -100,6 +100,8 @@ CORE = {
     "sms_bridge",
     # Its Matrix side: the appservice's registration, and one room per sender.
     "sms_rooms",
+    # Its way to the phone: the tool call through the claude-voice bridge, and its key.
+    "sms_hub",
 }
 TOP = {"server", "cli"}
 #: Which layers each layer may import from this package, and the outside packages it never may.

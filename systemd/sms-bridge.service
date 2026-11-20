@@ -1,0 +1,23 @@
+# sms-bridge, which pulls the phone's texts into the Matrix inbox, as a systemd user unit.
+# docs/setup.md, step 8, installs it. It runs as the owner, never as root.
+[Unit]
+Description=sms-bridge: the phone's text messages into the Matrix inbox, one room per sender
+After=network-online.target synapse.service
+Wants=network-online.target
+Requires=synapse.service
+
+[Service]
+ExecStart=%h/.local/bin/messages-mcp sms-bridge run
+Restart=on-failure
+RestartSec=30
+# Exit 2 means not set up, such as no key to the claude-voice bridge yet. Restarting cannot fix
+# that, so the unit stays stopped, and `systemctl --user status sms-bridge` shows the reason.
+RestartPreventExitStatus=2
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=%h/.local/share/sms-bridge %h/.local/state/sms-bridge
+
+[Install]
+WantedBy=default.target

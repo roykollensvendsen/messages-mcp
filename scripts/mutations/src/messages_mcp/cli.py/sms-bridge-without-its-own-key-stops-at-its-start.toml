@@ -1,0 +1,5 @@
+[[rule]]
+name = "sms-bridge without its own key stops at its start"
+file = "src/messages_mcp/cli.py"
+find = '^\s*keys\.key\(\)$'
+replace = 'pass'

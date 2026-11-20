@@ -32,6 +32,7 @@ The steps, in full, are in [docs/setup.md](docs/setup.md):
 5. Start ntfy behind the door
 6. Bridge Messenger with mautrix-meta
 7. Add the plugin to claude-voice
+8. Bridge text messages with sms-bridge
 
 ### Steps only the owner can do
 
