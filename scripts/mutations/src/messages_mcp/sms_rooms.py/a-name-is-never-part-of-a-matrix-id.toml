@@ -1,0 +1,5 @@
+[[rule]]
+name = "a name is never part of a matrix id"
+file = "src/messages_mcp/sms_rooms.py"
+find = '^\s*hashed = hashlib\.sha256\(sender\.casefold\(\)\.encode\(\)\)\.hexdigest\(\)\[:20\]$'
+replace = 'hashed = sender.casefold().replace(" ", "-")'

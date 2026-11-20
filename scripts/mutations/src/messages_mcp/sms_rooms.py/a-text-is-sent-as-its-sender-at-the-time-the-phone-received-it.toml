@@ -1,0 +1,5 @@
+[[rule]]
+name = "a text is sent as its sender at the time the phone received it"
+file = "src/messages_mcp/sms_rooms.py"
+find = '^\s*query = \{"user_id": ghost, "ts": stamp\}$'
+replace = 'query = {}'

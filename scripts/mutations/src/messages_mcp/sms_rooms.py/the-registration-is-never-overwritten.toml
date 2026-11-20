@@ -1,0 +1,5 @@
+[[rule]]
+name = "the registration is never overwritten"
+file = "src/messages_mcp/sms_rooms.py"
+find = '^\s*if path\.exists\(\):$'
+replace = 'if False:'
