@@ -13,6 +13,10 @@ class Linux:
         """`$XDG_CONFIG_HOME`, or `~/.config` when it is unset or empty."""
         return pathlib.Path(os.environ.get("XDG_CONFIG_HOME") or pathlib.Path.home() / ".config")
 
+    def data_home(self) -> pathlib.Path:
+        """`$XDG_DATA_HOME`, or `~/.local/share` when it is unset or empty."""
+        return pathlib.Path(os.environ.get("XDG_DATA_HOME") or pathlib.Path.home() / ".local/share")
+
     def state_home(self) -> pathlib.Path:
         """`$XDG_STATE_HOME`, or `~/.local/state` when it is unset or empty."""
         return pathlib.Path(os.environ.get("XDG_STATE_HOME") or pathlib.Path.home() / ".local/state")

@@ -15,6 +15,10 @@ class Platform(Protocol):
         """The folder that holds each program's own config folder."""
         ...
 
+    def data_home(self) -> pathlib.Path:
+        """The folder that holds each program's own data, such as a bridge's registration."""
+        ...
+
     def state_home(self) -> pathlib.Path:
         """The folder that holds each program's own logs and other state."""
         ...

@@ -135,6 +135,11 @@ def _login(path: pathlib.Path) -> tuple[str, str, str]:
     return homeserver, token, owner
 
 
+def owner_of(login: pathlib.Path) -> str:
+    """The owner's Matrix user, from the plugin's own login at `login`."""
+    return _login(login)[2]
+
+
 def bot_of(owner: str) -> str:
     """The bridge bot's Matrix ID on the owner's own server."""
     return f"@{BOT_USERNAME}:{owner.split(':', 1)[1]}"

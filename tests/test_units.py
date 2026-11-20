@@ -8,7 +8,7 @@ import pytest
 from messages_mcp import cli
 
 UNITS = pathlib.Path(__file__).parent.parent / "systemd"
-SERVICES = ["synapse", "ntfy", "mautrix-meta", "matrix-door-cert"]
+SERVICES = ["synapse", "ntfy", "mautrix-meta", "matrix-door-cert", "sms-bridge"]
 
 
 def _unit(name):
@@ -67,3 +67,14 @@ def test_the_doors_certificate_is_renewed_each_week_and_the_door_restarted():
     timer = _unit("matrix-door-cert.timer")["Timer"]
     assert timer["OnCalendar"] == "weekly"
     assert timer["Persistent"] == "true"
+
+
+def test_sms_bridge_starts_after_synapse_and_is_never_restarted_when_not_set_up():
+    unit = _unit("sms-bridge.service")
+    assert "synapse.service" in unit["Unit"]["After"].split()
+    assert unit["Unit"]["Requires"] == "synapse.service"
+    service = unit["Service"]
+    assert service["ExecStart"].split()[1:] == ["sms-bridge", "run"]
+    assert "sms-bridge" in cli.COMMANDS
+    assert service["RestartPreventExitStatus"] == str(cli.NOT_SET_UP)
+    assert service["ReadWritePaths"].split() == ["%h/.local/share/sms-bridge", "%h/.local/state/sms-bridge"]

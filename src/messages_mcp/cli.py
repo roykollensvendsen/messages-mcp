@@ -1,23 +1,47 @@
-"""Command line for messages-mcp: serve the tools, say what is unread once, run matrix-door, or set it up."""
+"""Command line for messages-mcp: serve the tools, say what is unread, run matrix-door or sms-bridge, or set them up."""
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import functools
 import getpass
 import pathlib
+import signal
 import ssl
 import sys
+from typing import TYPE_CHECKING
 
 from messages_mcp import bridge_config, door, door_cert, door_list, login, ntfy_config, platform, settings
 from messages_mcp.accounts import Accounts
+from messages_mcp.device import NotSetUpError
 from messages_mcp.fake import FakeInbox
 from messages_mcp.localapi import LocalAPI, LocalAPIError
+from messages_mcp.matrix import owner_of
 from messages_mcp.service import MessagesService
+from messages_mcp.sms_bridge import SmsBridge
+from messages_mcp.sms_hub import NoKeyYet, PhoneHub
+from messages_mcp.sms_rooms import MatrixRooms, as_token, write_registration
+
+if TYPE_CHECKING:
+    from messages_mcp.sms_hub import Caller, KeySource
 
 #: Every verb this command has.
-COMMANDS: tuple[str, ...] = ("serve", "unread", "login", "door", "door-cert", "bridge-config", "ntfy-config")
+COMMANDS: tuple[str, ...] = (
+    "serve",
+    "unread",
+    "login",
+    "door",
+    "door-cert",
+    "bridge-config",
+    "ntfy-config",
+    "sms-bridge",
+)
+#: sms-bridge's folder in the data home (registration, rooms) and in the state home (its place).
+SMS_BRIDGE = "sms-bridge"
+#: sms-bridge's exit when it is not set up; its unit does not restart on it.
+NOT_SET_UP = 2
 #: Help is laid out at one width on every terminal, so a page's copy of it stays true.
 HELP = functools.partial(argparse.HelpFormatter, width=100)
 
@@ -39,6 +63,8 @@ def main(argv: list[str] | None = None) -> int:
     ntfy = verbs.add_parser("ntfy-config", formatter_class=HELP, help="write ntfy's config for this laptop")
     ntfy.add_argument("ours", type=pathlib.Path, help="our settings: config/ntfy/server.yml")
     ntfy.add_argument("config", type=pathlib.Path, help="where ntfy reads its config: ~/.config/ntfy/server.yml")
+    sms = verbs.add_parser("sms-bridge", formatter_class=HELP, help="pull the phone's texts into Matrix (sms-bridge)")
+    sms.add_argument("action", choices=("run", "registration"), help="run it, or write its registration for Synapse")
     args = parser.parse_args(argv)
     try:
         configured = settings.load()
@@ -51,6 +77,7 @@ def main(argv: list[str] | None = None) -> int:
         "door-cert": run_door_cert,
         "bridge-config": run_bridge_config,
         "ntfy-config": run_ntfy_config,
+        "sms-bridge": run_sms_bridge,
     }
     return runs.get(args.command, _answer)(args, configured)
 
@@ -156,6 +183,74 @@ def run_ntfy_config(args: argparse.Namespace, _configured: settings.Settings) ->
     except (LocalAPIError, ntfy_config.NtfyConfigError) as failed:
         sys.stderr.write(f"{failed}; {args.config} not written\n")
         return 1
+    return 0
+
+
+def run_sms_bridge(
+    args: argparse.Namespace,
+    configured: settings.Settings,
+    keys: KeySource | None = None,
+    caller: Caller | None = None,
+) -> int:
+    """Run sms-bridge until stopped, or write its registration; 2, with the reason, when not set up."""
+    here = platform.current()
+    data = here.data_home() / SMS_BRIDGE
+    if args.action == "registration":
+        return _sms_registration(data / "registration.yaml")
+    try:
+        bridge = sms_bridge_parts(configured, data, here.state_home() / SMS_BRIDGE, keys or NoKeyYet(), caller)
+    except NotSetUpError as missing:
+        sys.stderr.write(f"sms-bridge is not set up: {missing}\n")
+        return NOT_SET_UP
+    return _run_until_stopped(bridge)  # pragma: no cover - runs until stopped
+
+
+def sms_bridge_parts(
+    configured: settings.Settings,
+    data: pathlib.Path,
+    state: pathlib.Path,
+    keys: KeySource,
+    caller: Caller | None,
+) -> SmsBridge:
+    """sms-bridge put together; `NotSetUpError` at once, before any poll, for anything missing."""
+    # RULE: sms-bridge without its own key stops at its start
+    keys.key()
+    if caller is None:
+        msg = "sms-bridge has no client for the claude-voice bridge yet; it comes with the key (plugin-callback-v1)"
+        raise NotSetUpError(msg)
+    hub = PhoneHub(caller, configured.sms_phone, keys)
+    token = as_token(data / "registration.yaml")
+    rooms = MatrixRooms(configured.homeserver, token, owner_of(configured.login_file()), data / "rooms.json")
+    return SmsBridge(hub, rooms, state / "position.json")
+
+
+def _sms_registration(path: pathlib.Path) -> int:
+    """Write sms-bridge's registration for this laptop's Matrix server; 1 when tailscaled cannot name it."""
+    api = LocalAPI(platform.current().tailscaled_socket(), door.WHOIS_TIMEOUT)
+    try:
+        server = asyncio.run(api.own_name())
+    except LocalAPIError as failed:
+        sys.stderr.write(f"{failed}; no registration written\n")
+        return 1
+    if write_registration(path, server):
+        sys.stdout.write(f"Wrote sms-bridge's registration to {path}, readable by you only.\n")
+    else:
+        sys.stdout.write(f"{path} is there already, and is kept: Synapse holds its tokens.\n")
+    return 0
+
+
+def _run_until_stopped(bridge: SmsBridge) -> int:  # pragma: no cover - runs until stopped
+    """Poll until systemd or the terminal stops it."""
+
+    async def go() -> None:
+        stop = asyncio.Event()
+        loop = asyncio.get_running_loop()
+        for stopping in (signal.SIGTERM, signal.SIGINT):
+            loop.add_signal_handler(stopping, stop.set)
+        await bridge.run(stop)
+
+    with contextlib.suppress(KeyboardInterrupt):
+        asyncio.run(go())
     return 0
 
 

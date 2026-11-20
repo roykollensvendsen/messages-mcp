@@ -37,6 +37,8 @@ class Settings:
     #: matrix-door's TLS certificate and key, from `tailscale cert`; empty means the config folder's.
     door_cert: str = ""
     door_key: str = ""
+    #: The phone sms-bridge pulls texts from, as the claude-voice bridge names it, such as `phone-a`.
+    sms_phone: str = ""
 
     def door_files(self) -> tuple[pathlib.Path, pathlib.Path]:
         """The certificate and key matrix-door serves, with the config folder's as the default."""
@@ -69,7 +71,8 @@ def load(path: pathlib.Path | None = None) -> Settings:
     inbox = data.pop("inbox", {})
     door = data.pop("door", {})
     accounts = data.pop("accounts", {})
-    unknown = sorted(data) + _unknown("inbox", inbox) + _unknown("door", door)
+    sms = data.pop("sms", {})
+    unknown = sorted(data) + _unknown("inbox", inbox) + _unknown("door", door) + _unknown("sms", sms)
     if unknown:
         msg = f"{path} has keys messages-mcp does not know: {', '.join(unknown)}; remove them or fix their spelling"
         raise SettingsError(msg)
@@ -79,11 +82,12 @@ def load(path: pathlib.Path | None = None) -> Settings:
         accounts=_names(accounts),
         door_cert=str(door.get("cert", "")),
         door_key=str(door.get("key", "")),
+        sms_phone=str(sms.get("phone", "")),
     )
 
 
 #: The keys each table of the config file may hold.
-KNOWN = {"inbox": ("simulate", "homeserver"), "door": ("cert", "key")}
+KNOWN = {"inbox": ("simulate", "homeserver"), "door": ("cert", "key"), "sms": ("phone",)}
 
 
 def _names(table: dict[str, object]) -> dict[str, str]:

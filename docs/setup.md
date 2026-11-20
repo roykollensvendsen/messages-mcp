@@ -204,6 +204,34 @@ claude-voice plugins install messages --from .
 
 Check: `claude-voice plugins list` shows `messages`.
 
+### 8. Bridge text messages with sms-bridge
+
+Wait for the phone's `sms` module and for sms-bridge's key to the claude-voice bridge. Until that
+key exists, sms-bridge stops at its start, says why, and is not restarted.
+
+sms-bridge pulls the phone's new texts through the claude-voice bridge on this laptop. It posts
+each into Synapse, one room per sender, as an appservice with a registration of its own. The
+registration is readable by the owner only. Synapse runs as the owner, so it reads it as it is.
+Never make it readable by others.
+
+Set `phone` under `[sms]` in `~/.config/messages-mcp/config.toml` to the phone's name, as the
+claude-voice bridge names its tools. Synapse then reads both bridges' registrations.
+
+<!-- not run: it writes Synapse's config and starts services on the host -->
+```
+messages-mcp sms-bridge registration
+printf 'app_service_config_files:\n  - %s\n  - %s\n' \
+  "$HOME/.local/share/mautrix-meta/registration.yaml" \
+  "$HOME/.local/share/sms-bridge/registration.yaml" > ~/.local/share/synapse/bridge.yaml
+cp systemd/sms-bridge.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user restart synapse.service
+systemctl --user enable --now sms-bridge.service
+```
+
+Check: `systemctl --user is-active sms-bridge.service` prints `active`. Before the key exists it
+prints `failed`, and `systemctl --user status sms-bridge.service` names plugin-callback-v1.
+
 ## Steps only the owner can do
 
 ### A. Keep the laptop awake with its lid closed
