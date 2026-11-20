@@ -1,0 +1,5 @@
+[[rule]]
+name = "the pin is proved against the file at its own commit"
+file = "scripts/schema_pin.py"
+find = '^\s*found = digest\(get\(url_at\(pin, pin\["commit"\]\)\)\)$'
+replace = 'found = pin["sha256"]'

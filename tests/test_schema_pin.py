@@ -47,15 +47,44 @@ def test_a_copy_holding_a_real_looking_number_is_refused(tmp_path):
     assert any("international form" in line for line in said)
 
 
-def test_the_phone_s_main_matching_the_pin_says_nothing():
-    """The phone's own file holds a real-looking number where the copy has the placeholder."""
-    theirs = schema_pin.COPY.read_text(encoding="utf-8").replace("+<country><number>", NUMBER)
+#: The phone's own file, holding a real-looking number where the copy has the placeholder.
+def theirs():
+    return schema_pin.COPY.read_text(encoding="utf-8").replace("+<country><number>", NUMBER)
+
+
+def by_ref(at_commit, at_main):
+    """A fake fetch keyed by ref: the pinned commit gives `at_commit`, main gives `at_main`."""
+    commit = schema_pin.pinned()["commit"]
     asked = []
 
     def get(url):
         asked.append(url)
-        return theirs
+        if f"/{commit}/" in url:
+            return at_commit
+        assert "/main/" in url, url
+        return at_main
 
+    return get, asked
+
+
+def test_the_pin_is_proved_against_the_file_at_its_own_commit():
+    get, asked = by_ref(theirs(), "{}")
+    assert schema_pin.check_pinned(get) == []
+    commit = schema_pin.pinned()["commit"]
+    assert asked == [
+        f"https://raw.githubusercontent.com/roykollensvendsen/claude-voice-mobile/{commit}/docs/plugins/sms/sms-since-answer.json"
+    ]
+
+
+def test_a_pin_whose_commit_holds_another_file_is_wrong():
+    get, _ = by_ref("{}", theirs())
+    [said] = schema_pin.check_pinned(get)
+    assert "the pin is wrong" in said
+    assert schema_pin.digest("{}") in said
+
+
+def test_the_phone_s_main_matching_the_pin_says_nothing():
+    get, asked = by_ref("{}", theirs())
     assert schema_pin.check_upstream(get) == []
     assert asked == [
         "https://raw.githubusercontent.com/roykollensvendsen/claude-voice-mobile/main/docs/plugins/sms/sms-since-answer.json"
@@ -69,10 +98,42 @@ def test_the_phone_s_main_moving_on_says_how_to_move_the_pin():
     assert "put the new commit and digest in the pin" in said[1]
 
 
-def test_the_command_line_fails_when_the_phone_s_main_moved(monkeypatch, capsys):
-    monkeypatch.setattr(schema_pin, "fetch", lambda _url: "{}")
+def test_the_phone_s_main_moving_on_is_a_reminder_not_a_failure(monkeypatch, capsys, tmp_path):
+    get, asked = by_ref(theirs(), "{}")
+    monkeypatch.setattr(schema_pin, "fetch", get)
+    summary = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+    assert schema_pin.main(["upstream"]) == 0
+    out = capsys.readouterr().out
+    assert out.count("::notice ") == 1
+    assert schema_pin.digest("{}") in out
+    assert "put the new commit and digest in the pin" in summary.read_text(encoding="utf-8")
+    assert len(asked) == 2, "both the pinned commit and main are asked"
+
+
+def test_the_reminder_needs_no_step_summary(monkeypatch, capsys):
+    get, _ = by_ref(theirs(), "{}")
+    monkeypatch.setattr(schema_pin, "fetch", get)
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+    assert schema_pin.main(["upstream"]) == 0
+    assert "::notice " in capsys.readouterr().out
+
+
+def test_the_command_line_fails_when_the_pin_is_wrong(monkeypatch, capsys):
+    get, asked = by_ref("{}", theirs())
+    monkeypatch.setattr(schema_pin, "fetch", get)
     assert schema_pin.main(["upstream"]) == 1
-    assert "no longer the file pinned" in capsys.readouterr().err
+    assert "the pin is wrong" in capsys.readouterr().err
+    assert len(asked) == 1, "main is not asked about a pin that is wrong"
+
+
+def test_the_command_line_is_quiet_when_the_pin_is_true_and_main_has_not_moved(monkeypatch, capsys):
+    get, _ = by_ref(theirs(), theirs())
+    monkeypatch.setattr(schema_pin, "fetch", get)
+    assert schema_pin.main(["upstream"]) == 0
+    out = capsys.readouterr().out
+    assert "::notice" not in out
+    assert "matches the pin" in out
 
 
 def test_the_command_line_says_the_copy_matches(capsys):

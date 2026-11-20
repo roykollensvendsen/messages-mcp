@@ -8,7 +8,11 @@ came from and the sha256 of the file with every such number written that way. So
 the phone's own file are compared by the same digest, and no digits are kept here.
 
     python scripts/schema_pin.py copy       the copy matches its pin; offline, and in the tests
-    python scripts/schema_pin.py upstream   the file on the phone's main matches the pin; nightly
+    python scripts/schema_pin.py upstream   the pin is true, and whether the phone's main moved; nightly
+
+`upstream` fails when the file at the pinned commit does not have the pinned digest: then the
+pin itself is wrong. The phone's main moving on is only a reminder (no-duplicates n8): exit 0,
+with a `::notice::` line and, on GitHub, a step summary saying how to move the pin.
 
 Moving the pin is one pull request: copy the new file, written the same way, and set the
 commit and the digest this prints in the pin.
@@ -19,6 +23,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import pathlib
 import sys
 import urllib.request
@@ -73,11 +78,25 @@ def fetch(url: str) -> str:
         return answer.read().decode("utf-8")
 
 
-def check_upstream(get: Callable[[str], str] = fetch, pin_file: pathlib.Path = PIN) -> list[str]:
-    """What has moved in the phone's file on main since the pin; empty when nothing has."""
+def url_at(pin: dict[str, str], ref: str) -> str:
+    """Where the phone's file is read at `ref`, a commit or a branch."""
+    return RAW.format(repo=pin["repo"], ref=ref, path=pin["path"])
+
+
+def check_pinned(get: Callable[[str], str] = fetch, pin_file: pathlib.Path = PIN) -> list[str]:
+    """What is wrong with the pin itself: the file at its commit with another digest; empty when true."""
     pin = pinned(pin_file)
-    url = RAW.format(repo=pin["repo"], ref="main", path=pin["path"])
-    found = digest(get(url))
+    # RULE: the pin is proved against the file at its own commit
+    found = digest(get(url_at(pin, pin["commit"])))
+    if found == pin["sha256"]:
+        return []
+    return [f"the pin is wrong: {pin['path']} at {pin['commit'][:12]} has the digest {found}, not {pin['sha256']}"]
+
+
+def check_upstream(get: Callable[[str], str] = fetch, pin_file: pathlib.Path = PIN) -> list[str]:
+    """How to move the pin, when the phone's file on main has moved on since it; empty when not."""
+    pin = pinned(pin_file)
+    found = digest(get(url_at(pin, "main")))
     if found == pin["sha256"]:
         return []
     return [
@@ -90,17 +109,32 @@ def check_upstream(get: Callable[[str], str] = fetch, pin_file: pathlib.Path = P
     ]
 
 
+def _remind(said: list[str]) -> None:
+    """Say that main moved as a GitHub notice and, when there is one, in the step's summary."""
+    sys.stdout.write(f"::notice title=The phone's schema moved on::{' '.join(said)}\n")
+    summary = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary:
+        with pathlib.Path(summary).open("a", encoding="utf-8") as page:
+            page.write("## The phone's text schema moved on\n\n" + "\n\n".join(said) + "\n")
+
+
 def main(argv: list[str] | None = None) -> int:
-    """Check the copy or the phone's main; 1, with what moved, when it does not match."""
+    """Check the copy, or the pin and the phone's main; 1, with what is wrong, when the copy or pin is."""
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("what", choices=("copy", "upstream"))
     args = parser.parse_args(argv)
-    said = check_copy() if args.what == "copy" else check_upstream(fetch)
-    for line in said:
+    wrong = check_copy() if args.what == "copy" else check_pinned(fetch)
+    for line in wrong:
         sys.stderr.write(line + "\n")
-    if not said:
-        sys.stdout.write(f"The {args.what} matches the pin.\n")
-    return 1 if said else 0
+    if wrong:
+        return 1
+    sys.stdout.write(
+        "The copy matches the pin.\n" if args.what == "copy" else "The file at the pinned commit matches the pin.\n"
+    )
+    if args.what == "upstream" and (moved := check_upstream(fetch)):
+        # RULE: the phone's main moving on is a reminder not a failure
+        _remind(moved)
+    return 0
 
 
 if __name__ == "__main__":
