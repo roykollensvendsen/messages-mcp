@@ -1,0 +1,5 @@
+[[rule]]
+name = "the phone's main moving on is a reminder not a failure"
+file = "scripts/schema_pin.py"
+find = '^\s*_remind\(moved\)$'
+replace = 'return 1'
