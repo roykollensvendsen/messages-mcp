@@ -228,3 +228,29 @@ def test_the_guide_installs_and_approves_the_plugin_by_its_manifests_name():
     named = re.findall(r"claude-voice plugins (install|approve) (\S+)", SETUP.read_text(encoding="utf-8"))
     assert {verb for verb, _ in named} == {"install", "approve"}
     assert [name for _, name in named if name != manifest["name"]] == []
+
+
+def _backup_lines():
+    """Step 8's two lines that copy Synapse's bridge list to the backups folder."""
+    step = SETUP.read_text(encoding="utf-8").split("### 8.", 1)[1].split("\n### ", 1)[0]
+    return [line for line in step.splitlines() if "backups/messages-mcp" in line]
+
+
+@pytest.mark.parametrize("there", [False, True])
+def test_step_8_backs_up_the_bridge_list_only_when_there_is_one(tmp_path, there):
+    """A fresh setup has no bridge.yaml yet: the backup must not stop the step (quality, #18)."""
+    lines = _backup_lines()
+    assert len(lines) == 2, lines
+    synapse = tmp_path / ".local" / "share" / "synapse"
+    synapse.mkdir(parents=True)
+    if there:
+        (synapse / "bridge.yaml").write_text("app_service_config_files: []\n", encoding="utf-8")
+    done = run_bounded(
+        ["bash", "-euc", "\n".join(lines)],
+        env={"HOME": str(tmp_path), "PATH": os.environ["PATH"]},
+        capture_output=True,
+        text=True,
+    )
+    assert done.returncode == 0, done.stderr
+    kept = list((tmp_path / ".local" / "state" / "claude-voice" / "backups" / "messages-mcp").iterdir())
+    assert len(kept) == (1 if there else 0)
