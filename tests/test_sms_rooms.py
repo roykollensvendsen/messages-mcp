@@ -383,3 +383,42 @@ def test_texts_from_an_unknown_sender_share_one_room(tmp_path):
     [room] = server.rooms
     assert len(server.messages(room)) == 2
     assert ghost_of("an unknown sender", "name", SERVER).startswith("@sms_name_")
+
+
+def test_a_room_is_kept_as_soon_as_it_is_made(tmp_path):
+    """A join that fails once leaves the room kept, so the sender's next text finds it."""
+
+    async def steps(server):
+        server.fail_next.append("/join/")
+        here = rooms(server, tmp_path)
+        with pytest.raises(RoomsError):
+            await here.post(sms())
+        await here.post(sms())
+
+    server = run(steps)
+    [(room, made)] = server.rooms.items()
+    assert ghost_of(NUMBER, "number", SERVER) in made["joined"]
+    assert len(server.messages(room)) == 1
+
+
+def test_two_first_texts_at_once_from_a_sender_make_one_room(tmp_path):
+    async def steps(server):
+        here = rooms(server, tmp_path)
+        await asyncio.gather(here.post(sms("madeup00-1")), here.post(sms("madeup00-2")))
+
+    server = run(steps)
+    [room] = server.rooms
+    assert len(server.messages(room)) == 2
+
+
+def test_a_room_list_that_is_not_one_is_an_error_not_a_fresh_start(tmp_path):
+    kept = tmp_path / "sms-bridge" / "rooms.json"
+    kept.parent.mkdir(mode=0o700)
+    kept.write_text("[]", encoding="utf-8")
+
+    async def steps(server):
+        with pytest.raises(RoomsError, match="not a list of rooms"):
+            await rooms(server, tmp_path).post(sms())
+
+    server = run(steps)
+    assert server.rooms == {}

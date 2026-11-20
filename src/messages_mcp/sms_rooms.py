@@ -9,13 +9,19 @@ with a transaction ID made from the phone's id, so a text sent again is taken on
 
 Notices from the bridge itself go to one room of their own, never marked as a chat.
 
+A room is made once. Its ID is kept the moment Synapse gives it, before the ghost joins, and one
+lock holds while a room is found or made, so a stop half way, a failed join, or two first texts
+at once never give a sender a second room.
+
 No room is encrypted, as for mautrix-meta in v1 (the owner's choice, deferred row D-enc). Only a
-Synapse on this laptop is ever given the bridge's token. Nothing is logged with a number, a
-name or a word of a text: the room list holds them, readable by the owner only.
+Synapse on this laptop is ever given the bridge's token. The bridge's own log holds no number,
+name or word of a text: the room list holds them, readable by the owner only. A number is part of
+its ghost's Matrix ID, as with mautrix bridges, so Synapse's own logs on this laptop hold it.
 """
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -50,6 +56,8 @@ SHORT_CODE = re.compile(r"[0-9]{1,6}")
 CLIENT = "/_matrix/client/v3"
 #: The key in the room list for the bridge's own notice room.
 NOTICES = "notices"
+#: The key in the room list that says a ghost has joined its room.
+JOINED = "joined "
 #: Seconds for one request to the laptop's own Synapse.
 TIMEOUT = 30
 
@@ -128,6 +136,7 @@ class MatrixRooms:
         self.bot = f"@{BOT_USERNAME}:{self.server}"
         self.rooms_file = rooms_file
         self._token = token
+        self._making = asyncio.Lock()
 
     async def post(self, sms: Sms) -> None:
         """Send `sms` as its sender's ghost into the sender's room, making both the first time."""
@@ -141,22 +150,38 @@ class MatrixRooms:
 
     async def notice(self, words: str) -> None:
         """Send `words` from the bridge's bot into its notice room, making that the first time."""
-        known = self._known()
-        room = known.get(NOTICES)
-        if room is None:
-            asked = {"preset": "private_chat", "name": "SMS bridge", "invite": [self.owner]}
-            made = await self._ask("POST", "/createRoom", asked)
-            room = str(made["room_id"])
-            self._keep({**known, NOTICES: room})
+        async with self._making:
+            known = self._known()
+            room = known.get(NOTICES)
+            if room is None:
+                asked = {"preset": "private_chat", "name": "SMS bridge", "invite": [self.owner]}
+                made = await self._ask("POST", "/createRoom", asked)
+                room = str(made["room_id"])
+                self._keep({**known, NOTICES: room})
+        # Random, not derived: the same words in a later outage must be posted again. A notice is
+        # sent again only when its post failed.
         txn = "notice-" + secrets.token_hex(16)
         await self._ask("PUT", f"/rooms/{_q(room)}/send/m.room.message/{txn}", {"msgtype": "m.notice", "body": words})
 
     async def _room_of(self, ghost: str, shown: str) -> str:
         """The room for `ghost`, made, with the ghost registered and joined, the first time."""
-        known = self._known()
-        # RULE: a sender keeps one room
-        if ghost in known:
-            return known[ghost]
+        # RULE: two first texts at once from a sender make one room
+        async with self._making:
+            known = self._known()
+            room = known.get(ghost)
+            # RULE: a sender keeps one room
+            if room is None:
+                room = await self._make(ghost, shown)
+                # RULE: a room is kept as soon as it is made
+                self._keep({**self._known(), ghost: room})
+                log.info("made a room for a new sender")
+            if JOINED + ghost not in known:
+                await self._ask("POST", f"/join/{_q(room)}", {}, {"user_id": ghost})
+                self._keep({**self._known(), JOINED + ghost: room})
+            return room
+
+    async def _make(self, ghost: str, shown: str) -> str:
+        """Register `ghost` and make its direct room, marked as an SMS chat; the room's ID."""
         await self._register(ghost, shown)
         bridge = {
             "bridgebot": self.bot,
@@ -175,11 +200,7 @@ class MatrixRooms:
                 "initial_state": [{"type": "m.bridge", "state_key": f"{PROTOCOL}/{ghost}", "content": bridge}],
             },
         )
-        room = str(made["room_id"])
-        await self._ask("POST", f"/join/{_q(room)}", {}, {"user_id": ghost})
-        self._keep({**self._known(), ghost: room})
-        log.info("made a room for a new sender")
-        return room
+        return str(made["room_id"])
 
     async def _register(self, ghost: str, shown: str) -> None:
         """Register `ghost` and give it the name the phone gave its sender; one already there is fine."""
@@ -196,7 +217,10 @@ class MatrixRooms:
         except (OSError, ValueError) as broken:
             msg = f"the room list in {self.rooms_file} could not be read"
             raise RoomsError(msg) from broken
-        return {str(k): str(v) for k, v in kept.items()} if isinstance(kept, dict) else {}
+        if not isinstance(kept, dict):
+            msg = f"the room list in {self.rooms_file} is not a list of rooms"
+            raise RoomsError(msg)
+        return {str(k): str(v) for k, v in kept.items()}
 
     def _keep(self, known: dict[str, str]) -> None:
         self.rooms_file.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
