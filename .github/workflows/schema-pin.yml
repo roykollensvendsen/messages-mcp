@@ -10,11 +10,11 @@ on:
     - cron: "17 4 * * *"
   workflow_dispatch:
 
-# A newer push to a pull request stops that pull request's stale run. Every other run, on
-# main, a tag or by hand, is its own group and always runs to the end.
+# One run at a time, never cancelled: a run by hand waits for the nightly one, so the second
+# finds the first's issue instead of opening another.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
 
 # Nothing here writes to the repository or its packages. Only the job below may write issues.
 permissions:

@@ -2,6 +2,7 @@
 
 import json
 import pathlib
+import subprocess
 
 import pytest
 import schema_pin
@@ -299,3 +300,33 @@ def test_each_gh_call_has_a_time_limit(monkeypatch):
     assert schema_pin._gh(["gh", "--version"]) == "[]"
     assert seen["timeout"] == 60
     assert seen["check"] is True
+
+
+@pytest.mark.parametrize(
+    "failing",
+    [
+        subprocess.CalledProcessError(1, ["gh"], stderr="made-up refusal"),
+        subprocess.TimeoutExpired(["gh"], 60),
+        FileNotFoundError("gh"),
+    ],
+    ids=["refused", "timed-out", "missing"],
+)
+def test_a_failed_gh_call_warns_and_never_turns_the_run_red(monkeypatch, capsys, failing):
+    """Red means the pin is wrong; a GitHub hiccup with the issue is said as a warning."""
+    monkeypatch.setattr(schema_pin, "check_pinned", lambda _fetch: [])
+    monkeypatch.setattr(schema_pin, "check_upstream", lambda _fetch: MOVED)
+
+    def run(_argv, **_how):
+        raise failing
+
+    monkeypatch.setattr(schema_pin.subprocess, "run", run)
+    assert schema_pin.main(["upstream", "--issue"]) == 0
+    out = capsys.readouterr().out
+    assert "::warning title=The issue was not kept::" in out
+
+
+def test_only_the_nightly_job_s_own_names_count_as_it():
+    """A user named github-actions is not the job; only the app and its bot account are."""
+    assert {"app/github-actions", "github-actions[bot]"} == schema_pin.JOB
+    plain = {**OURS, "author": {"login": "github-actions"}}
+    assert schema_pin.issue_steps([], [plain], PIN) == []

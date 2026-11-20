@@ -1,0 +1,5 @@
+[[rule]]
+name = "a failed gh call warns and never turns the run red"
+file = "scripts/schema_pin.py"
+find = '^\s*except \(subprocess\.SubprocessError, OSError, ValueError\) as failed:$'
+replace = 'except () as failed:'

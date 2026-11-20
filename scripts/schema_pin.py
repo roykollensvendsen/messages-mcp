@@ -51,8 +51,9 @@ TIMEOUT = 30
 ISSUE_TITLE = "The phone's text schema has moved on from the pin"
 #: How the job finds that issue: open, opened by the job itself, searched by title, not paged.
 ISSUE_SEARCH = ["gh", "issue", "list", "--state", "open", "--author", "app/github-actions", "--search"]
-#: The names `gh` may give the job's own author, GitHub Actions' bot. Only a workflow can be it.
-JOB = {"app/github-actions", "github-actions", "github-actions[bot]"}
+#: The names `gh` may give the job's own author, GitHub Actions' bot. Only a workflow can be it;
+#: a plain `github-actions` could be anyone's user name.
+JOB = {"app/github-actions", "github-actions[bot]"}
 #: Seconds for each `gh` call.
 GH_TIMEOUT = 60
 
@@ -190,7 +191,11 @@ def main(argv: list[str] | None = None) -> int:
         # RULE: the phone's main moving on is a reminder not a failure
         _remind(moved)
     if args.issue:
-        keep_issue(moved)
+        try:
+            keep_issue(moved)
+        # RULE: a failed gh call warns and never turns the run red
+        except (subprocess.SubprocessError, OSError, ValueError) as failed:
+            sys.stdout.write(f"::warning title=The issue was not kept::gh failed: {type(failed).__name__}\n")
     return 0
 
 
