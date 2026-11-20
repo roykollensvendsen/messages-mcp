@@ -1,0 +1,5 @@
+[[rule]]
+name = "an outage the phone explains is told to the owner once"
+file = "src/messages_mcp/sms_bridge.py"
+find = '^\s*if words is None or self\._told:$'
+replace = 'if words is None:'

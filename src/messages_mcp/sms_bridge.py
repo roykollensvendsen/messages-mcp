@@ -35,8 +35,12 @@ log = logging.getLogger(__name__)
 #: Seconds to wait after a poll that brought texts, and the most to wait when the phone is idle.
 FIRST_WAIT = 15.0
 LONGEST_WAIT = 120.0
+#: Seconds to wait when the phone says more is waiting but gave nothing new, so it never spins.
+MORE_BUT_NOTHING_NEW = 1.0
 #: The most messages one answer may hold, as the schema says.
 MOST_PER_ANSWER = 50
+#: The words for the owner when texts come through again after an outage the owner was told of.
+BACK = "Text messages from the phone are coming through again."
 #: How many posted ids are remembered: the phone keeps at most 500, so twice that drops every repeat.
 KEEP_SEEN = 1000
 SENDER_KINDS = frozenset({"number", "short_code", "name"})
@@ -138,7 +142,10 @@ def _sms(given: Any) -> Sms:  # noqa: ANN401 - this is where it is checked
     stamp = given["received_at"]
     if not isinstance(stamp, str) or not RECEIVED_AT.fullmatch(stamp):
         _refuse("a message's time is not ISO 8601 with an offset")
-    at = dt.datetime.fromisoformat(stamp)
+    try:
+        at = dt.datetime.fromisoformat(stamp)
+    except ValueError as impossible:
+        _refuse("a message's time is not a real time", impossible)
     return Sms(given["id"], given["from"], given["from_kind"], at, given["text"], given["masked"], given["cut"])
 
 
@@ -163,6 +170,7 @@ class SmsBridge:
         self.empty_polls = 0
         self._wait = FIRST_WAIT
         self._failed = 0
+        self._told = False
         self._cursor, self._seen = self._load()
 
     def _load(self) -> tuple[str | None, list[str]]:
@@ -197,10 +205,14 @@ class SmsBridge:
             # RULE: a phone that stays away is logged once
             if self._failed == 1:
                 log.warning("the phone did not answer the poll, or its answer could not be posted: %s", _why(failed))
+            await self._tell_outage(failed)
             return self._longer()
         if self._failed:
             log.info("the phone answers again, after %d failed polls", self._failed)
             self._failed = 0
+        # RULE: the owner is told when texts come through again
+        if self._told:
+            self._told = not await self._tell(BACK)
         # RULE: an empty poll is counted never logged
         if posted or got.dropped or got.reset:
             log.info("posted %d new texts, %d lost on the phone", posted, got.dropped)
@@ -208,11 +220,29 @@ class SmsBridge:
             self.empty_polls += 1
         # RULE: a poll with more waiting asks again at once
         if got.more:
-            return 0.0
+            # RULE: a phone that says more with nothing new is asked again after a second
+            return 0.0 if posted else MORE_BUT_NOTHING_NEW
         if posted:
             self._wait = FIRST_WAIT
             return self._wait
         return self._longer()
+
+    async def _tell_outage(self, failed: Exception) -> None:
+        """Tell the owner, once per outage, when the phone refuses or answers off the schema."""
+        words = outage_notice(failed)
+        # RULE: an outage the phone explains is told to the owner once
+        if words is None or self._told:
+            return
+        self._told = await self._tell(words)
+
+    async def _tell(self, words: str) -> bool:
+        """Post `words` to the bridge's room; whether it was posted."""
+        try:
+            await self.rooms.notice(words)
+        except Exception as failed:  # noqa: BLE001 - a notice that fails is tried again next outage
+            log.warning("a notice to the bridge's room could not be posted: %s", type(failed).__name__)
+            return False
+        return True
 
     async def _post(self, got: Answer) -> int:
         """Post each new text in `got`, then its lost count; keep its cursor last. How many were posted."""
@@ -235,6 +265,18 @@ class SmsBridge:
         """Poll until `stop` is set, waiting between polls as each one says."""
         while not stop.is_set():
             await sleep(await self.poll())
+
+
+def outage_notice(failed: Exception) -> str | None:
+    """The owner's words for an outage the phone explains; None when the phone is only away."""
+    if isinstance(failed, RefusedError):
+        return f"Text messages have stopped: the phone refused sms-bridge. It said: {failed}"
+    if isinstance(failed, BadAnswerError):
+        return (
+            "Text messages have stopped: the phone's answer to sms-bridge is not of the agreed shape"
+            f" ({failed}). The texts wait on the phone; update claude-voice-mobile or messages-mcp so they agree."
+        )
+    return None
 
 
 def _why(failed: Exception) -> str:

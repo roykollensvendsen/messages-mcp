@@ -1,0 +1,5 @@
+[[rule]]
+name = "a phone that says more with nothing new is asked again after a second"
+file = "src/messages_mcp/sms_bridge.py"
+find = '^\s*return 0\.0 if posted else MORE_BUT_NOTHING_NEW$'
+replace = 'return 0.0'
