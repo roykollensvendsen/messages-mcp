@@ -1,0 +1,6 @@
+[[rule]]
+name = "two first texts at once from a sender make one room"
+file = "src/messages_mcp/sms_rooms.py"
+find = '^\s*async with self\._making:$'
+occurrence = 2
+replace = 'async with asyncio.Lock():'

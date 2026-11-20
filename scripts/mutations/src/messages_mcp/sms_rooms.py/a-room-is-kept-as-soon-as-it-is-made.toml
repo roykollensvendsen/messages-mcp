@@ -1,0 +1,6 @@
+[[rule]]
+name = "a room is kept as soon as it is made"
+file = "src/messages_mcp/sms_rooms.py"
+find = '^\s*self\._keep\(\{\*\*self\._known\(\), ghost: room\}\)$'
+occurrence = 1
+replace = 'pass'
