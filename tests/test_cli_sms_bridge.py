@@ -18,6 +18,8 @@ from messages_mcp.sms_rooms import write_registration
 
 SERVER = "made-up-laptop.example.invalid"
 OWNER = f"@owner:{SERVER}"
+#: What `run` gives in these tests when nothing stopped it at its start.
+RAN = 99
 
 
 @pytest.fixture
@@ -28,6 +30,10 @@ def own_folders(tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.setenv("MESSAGES_MCP_CONFIG", str(tmp_path / "config.toml"))
     monkeypatch.setattr(cli.platform.linux.Linux, "tailscaled_socket", lambda _self: tmp_path / "nobody.sock")
+    # A test that got past every start check would poll until stopped, so a mutation run that
+    # switches one off would hang until the job's time ran out. It ends at once, with an exit
+    # no test expects, instead.
+    monkeypatch.setattr(cli, "_run_until_stopped", lambda _bridge: RAN)
     return tmp_path
 
 
@@ -186,3 +192,9 @@ def test_a_broken_room_list_stops_sms_bridge_at_its_start(own_folders, capsys, k
     (own_folders / "data" / "sms-bridge" / "rooms.json").write_text(kept, encoding="utf-8")
     assert _run(keys=Key(), caller=Bridge()) == 2
     assert "rooms.json" in capsys.readouterr().err
+
+
+def test_sms_bridge_set_up_runs_until_stopped(own_folders):
+    """Everything there: past the start checks, it runs (here, the stand-in for the poll loop)."""
+    _set_up(own_folders)
+    assert _run(keys=Key(), caller=Bridge()) == RAN
