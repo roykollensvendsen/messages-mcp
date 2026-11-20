@@ -150,10 +150,14 @@ def _sms(given: Any) -> Sms:  # noqa: ANN401 - this is where it is checked
 
 
 def lost_notice(dropped: int) -> str:
-    """The bridge's words for texts the phone lost before they were given."""
+    """The bridge's words for texts the phone dropped before the laptop had them.
+
+    The phone's count can be a little high, never low (sms-since-answer.json at mobile #137): a
+    text given in an answer that was not yet acknowledged may be counted too. So it is "up to".
+    """
     texts = "text message" if dropped == 1 else "text messages"
     return (
-        f"The phone lost {dropped} {texts} before they reached the laptop: more than 500 were"
+        f"The phone dropped up to {dropped} {texts} before the laptop had them: more than 500 were"
         " waiting, they were older than 7 days, or its queue's key was lost. Read them on the phone."
     )
 

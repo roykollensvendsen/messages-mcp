@@ -156,13 +156,13 @@ def test_texts_the_phone_lost_are_told_in_a_notice(tmp_path):
     rooms = FakeRooms()
     poll(bridge(tmp_path, FakeHub(answer(dropped=3)), rooms))
     assert len(rooms.notices) == 1
-    assert "3 text messages" in rooms.notices[0]
+    assert "up to 3 text messages" in rooms.notices[0], "the phone's count can be high, never low"
 
 
 def test_one_lost_text_is_told_in_the_singular(tmp_path):
     rooms = FakeRooms()
     poll(bridge(tmp_path, FakeHub(answer(dropped=1)), rooms))
-    assert "1 text message " in rooms.notices[0]
+    assert "up to 1 text message " in rooms.notices[0]
 
 
 def test_no_notice_is_posted_when_nothing_was_lost(tmp_path):
@@ -383,10 +383,11 @@ def test_a_time_that_fits_the_pattern_but_is_not_real_is_refused():
 def test_the_schema_s_own_examples_are_read():
     """Every example in the copy of claude-voice-mobile's sms-since-answer.json is read."""
     read = [parse(example) for example in SCHEMA["examples"]]
-    assert [len(a.messages) for a in read] == [2, 0, 0, 1]
+    assert [len(a.messages) for a in read] == [2, 0, 0, 1, 1]
     assert read[0].messages[1].masked
     assert read[2].dropped == 3
-    assert (read[3].more, read[3].reset) == (True, True)
+    assert (read[3].messages[0].sender, read[3].messages[0].sender_kind) == ("an unknown sender", "name")
+    assert (read[4].more, read[4].reset) == (True, True)
 
 
 def test_a_masked_text_is_posted_as_the_phone_worded_it(tmp_path):

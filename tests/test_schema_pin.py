@@ -36,7 +36,7 @@ def test_a_changed_copy_is_named_with_its_new_digest(tmp_path):
     copy = tmp_path / "copy.json"
     copy.write_text(schema_pin.COPY.read_text(encoding="utf-8").replace('"maxItems": 50', '"maxItems": 51'))
     [said] = schema_pin.check_copy(copy)
-    assert "not the file pinned at 58c8e54ac185" in said
+    assert f"not the file pinned at {schema_pin.pinned()['commit'][:12]}" in said
     assert schema_pin.digest(copy.read_text(encoding="utf-8")) in said
 
 
